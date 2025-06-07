@@ -4,9 +4,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const { createClient } = require('@libsql/client'); // MODIFIED: Replaced sqlite3 with Turso client
+const { createClient } = require('@libsql/client');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const os = require('os'); // For system status
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,7 +20,7 @@ class NoProvidersAvailableError extends Error {
   }
 }
 
-// --- NEW: Database Setup (Turso) ---
+// --- Database Setup (Turso) ---
 if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
     throw new Error('FATAL_ERROR: Turso database URL or auth token is not defined in .env file.');
 }
@@ -29,7 +30,7 @@ const db = createClient({
     authToken: process.env.TURSO_AUTH_TOKEN,
 });
 
-// NEW: Asynchronously create the table if it doesn't exist
+// Asynchronously create the table if it doesn't exist
 (async () => {
     try {
         await db.execute(`
@@ -47,7 +48,6 @@ const db = createClient({
     }
 })();
 
-
 // --- In-flight Request Handling ---
 const inFlightRequests = new Map();
 
@@ -60,6 +60,7 @@ const apiLimiter = rateLimit({
 	legacyHeaders: false,
     message: { error: 'Too many requests, please try again after 15 minutes.' },
 });
+// Apply rate limiter only to the API endpoint
 app.use('/api/', apiLimiter);
 
 // --- Standard Middleware ---
@@ -71,7 +72,7 @@ const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_API_KEY_2 = process.env.GOOGLE_API_KEY_2;
 const GOOGLE_API_KEY_3 = process.env.GOOGLE_API_KEY_3;
 
-// --- Helper Functions (Unchanged) ---
+// --- Helper Functions ---
 const tryParse = (text) => {
     if (!text) return null;
     const start = text.indexOf('{');
@@ -83,11 +84,26 @@ const tryParse = (text) => {
         return null;
     } catch { return null; }
 };
+
 function generateHash(text) {
     return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-// --- AI Provider Functions (Unchanged) ---
+function formatUptime(seconds) {
+    function pad(s) {
+        return (s < 10 ? '0' : '') + s;
+    }
+    const days = Math.floor(seconds / (24 * 3600));
+    seconds %= (24 * 3600);
+    const hours = Math.floor(seconds / 3600);
+    seconds %= 3600;
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+
+    return `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(secs)}s`;
+}
+
+// --- AI Provider Functions ---
 async function googleAI(combinedPrompt, apiKey, modelName) {
     if (!apiKey) return Promise.reject(new Error(`Google AI (${modelName}) key is missing`));
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -101,7 +117,7 @@ async function googleAI(combinedPrompt, apiKey, modelName) {
     return parsed;
 }
 
-// --- Provider Management (Unchanged)---
+// --- Provider Management ---
 let providersConfig = [
     { id: 'google1_gemini2.0-flash', key: GOOGLE_API_KEY,   model: 'gemini-2.0-flash', fn: googleAI, busy: false },
     { id: 'google2_gemini2.0-flash', key: GOOGLE_API_KEY_2, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
@@ -114,6 +130,50 @@ let providersConfig = [
 function getPrioritizedProviders() {
     return [...providersConfig].sort((a, b) => a.busy - b.busy);
 }
+
+// --- Status Endpoint (Root) ---
+app.get('/', async (req, res) => {
+    let dbStatus = 'disconnected';
+    let dbLatency = -1;
+
+    try {
+        const startTime = performance.now();
+        await db.execute('SELECT 1'); // Simple, fast query to check connection
+        const endTime = performance.now();
+        dbStatus = 'connected';
+        dbLatency = parseFloat((endTime - startTime).toFixed(2));
+    } catch (error) {
+        console.error("Health check DB ping failed:", error.message);
+    }
+    
+    const memoryUsage = process.memoryUsage();
+
+    const status = {
+        status: 'ok',
+        uptime: formatUptime(process.uptime()),
+        timestamp: new Date().toISOString(),
+        database: {
+            status: dbStatus,
+            provider: 'Turso',
+            latency_ms: dbLatency > -1 ? dbLatency : 'N/A'
+        },
+        memory: {
+            rss: `${(memoryUsage.rss / 1024 / 1024).toFixed(2)} MB`,
+            heapTotal: `${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)} MB`,
+            heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`
+        },
+        platform: {
+            // NOTE: On Render, these reflect the underlying host, not just your container.
+            cpuLoad: os.loadavg(), // [1m, 5m, 15m] load averages
+            freeMemory: `${(os.freemem() / 1024 / 1024).toFixed(2)} MB`
+        },
+        storage: {
+            note: 'Primary data storage is on Turso. Ephemeral disk space is managed by Render.'
+        }
+    };
+
+    res.json(status);
+});
 
 // --- Main API Endpoint ---
 app.post('/api/translate', async (req, res) => {
@@ -135,7 +195,6 @@ app.post('/api/translate', async (req, res) => {
         }
     }
     
-    // MODIFIED: Simplified cache check with async/await and Turso client
     try {
         const cacheResult = await db.execute({
             sql: "SELECT rom, transl FROM cache WHERE hash = ?",
@@ -197,7 +256,6 @@ Also check the title as it may be present in the translation of non English song
                 console.log(`Success with provider: ${provider.id}`);
                 const finalResult = { rom: result.rom.replace(/\\n/g, '\n'), transl: result.transl.replace(/\\n/g, '\n') };
                 
-                // MODIFIED: Simplified cache insertion with async/await and Turso client
                 try {
                     await db.execute({
                         sql: "INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)",
@@ -242,15 +300,13 @@ const server = app.listen(port, () => {
     console.log(`Spotify Lyrics Backend listening at http://localhost:${port}`);
 });
 
-// 5. Add a server-wide timeout to prevent slowloris attacks
-server.setTimeout(30000);
+server.setTimeout(30000); // 30 seconds
 
 // --- Graceful Shutdown ---
 process.on('SIGINT', () => {
     console.log('Shutting down gracefully...');
     server.close(() => {
         console.log('Server closed.');
-        // MODIFIED: Simplified DB close method for Turso client
         db.close();
         console.log('Closed the database connection.');
         process.exit(0);
