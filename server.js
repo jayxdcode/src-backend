@@ -4,9 +4,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
-const sqlite3 = require('sqlite3').verbose();
-const helmet = require('helmet'); // For security headers
-const rateLimit = require('express-rate-limit'); // For rate limiting
+const { createClient } = require('@libsql/client'); // MODIFIED: Replaced sqlite3 with Turso client
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,21 +19,34 @@ class NoProvidersAvailableError extends Error {
   }
 }
 
-// --- Database Setup (Caching) ---
-const dbFile = './translations.db';
-const db = new sqlite3.Database(dbFile, (err) => {
-    if (err) {
-        console.error("Error opening database", err.message);
-    } else {
-        console.log("Connected to the SQLite database.");
-        db.run(`CREATE TABLE IF NOT EXISTS cache (
-            hash TEXT PRIMARY KEY,
-            rom TEXT NOT NULL,
-            transl TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
-    }
+// --- NEW: Database Setup (Turso) ---
+if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    throw new Error('FATAL_ERROR: Turso database URL or auth token is not defined in .env file.');
+}
+
+const db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN,
 });
+
+// NEW: Asynchronously create the table if it doesn't exist
+(async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS cache (
+                hash TEXT PRIMARY KEY,
+                rom TEXT NOT NULL,
+                transl TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        console.log("Connected to Turso DB and ensured 'cache' table exists.");
+    } catch (err) {
+        console.error("Error initializing database schema:", err);
+        process.exit(1); // Exit if we can't set up the database
+    }
+})();
+
 
 // --- In-flight Request Handling ---
 const inFlightRequests = new Map();
@@ -88,7 +101,7 @@ async function googleAI(combinedPrompt, apiKey, modelName) {
     return parsed;
 }
 
-// --- Provider Management ---
+// --- Provider Management (Unchanged)---
 let providersConfig = [
     { id: 'google1_gemini2.0-flash', key: GOOGLE_API_KEY,   model: 'gemini-2.0-flash', fn: googleAI, busy: false },
     { id: 'google2_gemini2.0-flash', key: GOOGLE_API_KEY_2, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
@@ -96,7 +109,7 @@ let providersConfig = [
     { id: 'google1_gemini1.5-flash', key: GOOGLE_API_KEY,   model: 'gemini-1.5-flash', fn: googleAI, busy: false },
     { id: 'google2_gemini1.5-flash', key: GOOGLE_API_KEY_2, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
     { id: 'google3_gemini1.5-flash', key: GOOGLE_API_KEY_3, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
-].filter(p => p.key); // Filter out providers without a configured key
+].filter(p => p.key);
 
 function getPrioritizedProviders() {
     return [...providersConfig].sort((a, b) => a.busy - b.busy);
@@ -115,21 +128,29 @@ app.post('/api/translate', async (req, res) => {
             const result = await inFlightRequests.get(lrcHash);
             return res.json(result);
         } catch (error) {
-            // Check if the in-flight request failed because providers were busy
             if (error instanceof NoProvidersAvailableError) {
                 return res.status(503).set('Retry-After', 30).json({ error: error.message });
             }
             return res.status(500).json({ error: "The initial request failed. Please try again." });
         }
     }
+    
+    // MODIFIED: Simplified cache check with async/await and Turso client
     try {
-        const row = await new Promise((resolve, reject) => { db.get("SELECT rom, transl FROM cache WHERE hash = ?", [lrcHash], (err, row) => err ? reject(err) : resolve(row)); });
-        if (row) {
+        const cacheResult = await db.execute({
+            sql: "SELECT rom, transl FROM cache WHERE hash = ?",
+            args: [lrcHash]
+        });
+
+        if (cacheResult.rows.length > 0) {
             console.log("Cache hit. Returning cached result.");
+            const row = cacheResult.rows[0];
             return res.json({ rom: row.rom, transl: row.transl });
         }
         console.log("Cache miss. Proceeding to AI providers.");
-    } catch (dbError) { console.error("Database check failed:", dbError); }
+    } catch (dbError) { 
+        console.error("Database check failed:", dbError); 
+    }
 
     const fetchAndCache = async () => {
         const systemIns = `
@@ -160,7 +181,6 @@ Also check the title as it may be present in the translation of non English song
 
         const prioritizedProviders = getPrioritizedProviders();
 
-        // **NEW**: Check if all providers are busy before proceeding.
         if (!prioritizedProviders.length || prioritizedProviders[0].busy) {
             console.warn("All providers are busy. Rejecting request temporarily.");
             throw new NoProvidersAvailableError("All AI providers are currently busy. Please try again shortly.");
@@ -168,9 +188,6 @@ Also check the title as it may be present in the translation of non English song
 
         let lastError = null;
         for (const provider of prioritizedProviders) {
-            // Since we checked for busy state above, we can now attempt a request.
-            // If this provider is busy, the sort pushed it to the end, and we'll only
-            // reach it if all idle providers before it have failed.
             if (provider.busy) continue;
 
             try {
@@ -179,16 +196,24 @@ Also check the title as it may be present in the translation of non English song
                 const result = await provider.fn(combinedPrompt, provider.key, provider.model);
                 console.log(`Success with provider: ${provider.id}`);
                 const finalResult = { rom: result.rom.replace(/\\n/g, '\n'), transl: result.transl.replace(/\\n/g, '\n') };
-                db.run("INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)", [lrcHash, finalResult.rom, finalResult.transl], (err) => {
-                    if (err) console.error("Failed to write to cache:", err.message);
-                    else console.log("Result successfully cached.");
-                });
+                
+                // MODIFIED: Simplified cache insertion with async/await and Turso client
+                try {
+                    await db.execute({
+                        sql: "INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)",
+                        args: [lrcHash, finalResult.rom, finalResult.transl]
+                    });
+                    console.log("Result successfully cached.");
+                } catch (cacheErr) {
+                    console.error("Failed to write to cache:", cacheErr.message);
+                }
+
                 return finalResult;
             } catch (error) {
                 console.error(`Provider ${provider.id} failed:`, error.message);
                 lastError = error;
             } finally {
-                provider.busy = false; // Free up the provider
+                provider.busy = false;
             }
         }
 
@@ -202,7 +227,6 @@ Also check the title as it may be present in the translation of non English song
         const finalResult = await promise;
         res.json(finalResult);
     } catch (error) {
-        // **NEW**: Specific handling for the "all busy" case
         if (error instanceof NoProvidersAvailableError) {
             res.status(503).set('Retry-After', 30).json({ error: error.message });
         } else {
@@ -219,19 +243,16 @@ const server = app.listen(port, () => {
 });
 
 // 5. Add a server-wide timeout to prevent slowloris attacks
-server.setTimeout(30000); // 30 seconds
+server.setTimeout(30000);
 
 // --- Graceful Shutdown ---
 process.on('SIGINT', () => {
     console.log('Shutting down gracefully...');
     server.close(() => {
         console.log('Server closed.');
-        db.close((err) => {
-            if (err) {
-                console.error(err.message);
-            }
-            console.log('Closed the database connection.');
-            process.exit(0);
-        });
+        // MODIFIED: Simplified DB close method for Turso client
+        db.close();
+        console.log('Closed the database connection.');
+        process.exit(0);
     });
 });
