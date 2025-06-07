@@ -59,8 +59,8 @@ app.use(express.json({ limit: '50kb' }));
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_API_KEY_2 = process.env.GOOGLE_API_KEY_2;
 const GOOGLE_API_KEY_3 = process.env.GOOGLE_API_KEY_3;
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-const CHUTES_API_KEY = process.env.CHUTES_API_KEY;
+// const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
+// const CHUTES_API_KEY = process.env.CHUTES_API_KEY;
 
 // --- Helper Functions (tryParse, generateHash) ---
 // ... (These functions remain unchanged from the previous version)
@@ -96,33 +96,6 @@ async function googleAI(combinedPrompt, apiKey, modelName) {
     console.log(`Success: Google AI (${modelName})`);
     return parsed;
 }
-async function huggingfaceAI(combinedPrompt) {
-    if (!HUGGINGFACE_API_KEY) return Promise.reject(new Error("HuggingFace API key is missing"));
-    const model = "mistralai/Mixtral-8x7B-Instruct-v0.1";
-    const endpoint = `https://api-inference.huggingface.co/models/${model}`;
-    const response = await fetch(endpoint, { headers: { "Authorization": `Bearer ${HUGGINGFACE_API_KEY}`, "Content-Type": "application/json", }, method: "POST", body: JSON.stringify({ inputs: combinedPrompt }), });
-    if (!response.ok) throw new Error(`HuggingFace API error: ${response.status}`);
-    const result = await response.json();
-    const content = result[0]?.generated_text ?? "";
-    const parsed = tryParse(content);
-    if (!parsed) throw new Error("HuggingFace parsing failed");
-    console.log("Success: HuggingFace");
-    return parsed;
-}
-async function chutesAI(combinedPrompt) {
-    if (!CHUTES_API_KEY) return Promise.reject(new Error("Chutes.ai API key is missing"));
-    const model = "gemini-pro";
-    const endpoint = 'https://api.chutes.ai/v1/chat/completions';
-    const response = await fetch(endpoint, { method: 'POST', headers: { 'Authorization': `Bearer ${CHUTES_API_KEY}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: model, messages: [{ role: 'user', content: combinedPrompt }] }) });
-    if (!response.ok) throw new Error(`Chutes.ai API error: ${response.status}`);
-    const result = await response.json();
-    const content = result.choices?.[0]?.message?.content ?? '';
-    const parsed = tryParse(content);
-    if (!parsed) throw new Error('Chutes.ai parsing failed');
-    console.log("Success: Chutes.ai");
-    return parsed;
-}
-
 
 // --- Main API Endpoint (remains the same) ---
 app.post('/api/translate', async (req, res) => {
@@ -191,10 +164,14 @@ Also check the title as it may be present in the translation of non English song
         const combinedPrompt = `${systemIns}\n\n${userPrompt}`;
         const providers = [
             googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-flash-latest"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-pro"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-pro-latest"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-flash-latest"),
             googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-pro"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-pro-latest"),
-            huggingfaceAI(combinedPrompt),
-            chutesAI(combinedPrompt)
+            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-pro-latest"),
+	    googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-flash-latest"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-pro"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-pro-latest")
         ];
         try {
             const result = await Promise.any(providers);
