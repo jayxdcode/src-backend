@@ -163,15 +163,14 @@ Also check the title as it may be present in the translation of non English song
 	const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
         const combinedPrompt = `${systemIns}\n\n${userPrompt}`;
         const providers = [
-            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-flash-latest"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-pro"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-pro-latest"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-flash-latest"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-pro"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-pro-latest"),
-	    googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-flash-latest"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-pro"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-pro-latest")
+            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-2.0-flash"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-2.0-flash"),
+	    googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-2.0-flash"),
+            
+            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-flash"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-flash"),
+            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-flash"),
+            
         ];
         try {
             const result = await Promise.any(providers);
