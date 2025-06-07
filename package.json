@@ -1,0 +1,20 @@
+{
+  "name": "llm-lyrics-backend",
+  "version": "1.0.0",
+  "description": "A backend service to translate and romanize song lyrics using Gemini 2.0 Flash as a primary model",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "jayxdcode",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "helmet": "^7.1.0",
+    "sqlite3": "^5.1.7"
+  }
+}
