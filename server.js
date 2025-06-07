@@ -147,8 +147,47 @@ app.post('/api/translate', async (req, res) => {
         console.log("Cache miss. Proceeding to AI providers.");
     } catch (dbError) { console.error("Database check failed:", dbError); }
     const fetchAndCache = async () => {
-        const systemIns = `You are an LRC romanizer and translator... [rest of prompt]`.trim();
-        const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
+        const systemIns = `
+You are an LRC romanizer and translator.
+
+Your response must be a single valid JSON object with exactly two keys: "rom" and "transl". Each value is a string of properly formatted LRC lines. Output only the JSON object, no markdown or any extra formatting.
+
+Input structure per timestamp:
+- Original: the original lyric line (Latin or non-Latin).
+- Romanized: the performance-style romanization of non-Latin scripts, or blank (timestamp-only) for pure Latin/English lines.
+- Translated: the English translation of non-English lines, or blank (timestamp-only) for English lines.
+
+Rules:
+1. Preserve all metadata/tag lines (like [ti:], [ar:], [al:], credits) exactly as-is in both "rom" and "transl".
+2. Preserve every timestamp (e.g. [00:05.00]) exactly.
+3. For any line whose lyrics are entirely in English or any other Latin-alphabet script:
+   - In "rom": output only the timestamp (e.g. "[00:12.34]") with no text following.
+   - In "transl": output only the timestamp with no text following.
+4. For any instrumental or musical marker lines (e.g. ♪, [instrumental], etc.):
+   - Output only the timestamp in both "rom" and "transl".
+5. For non-Latin scripts:
+   - In "rom": romanize as sung (performance-style phonetics), respecting poetic readings and furigana.
+6. For non-English lines:
+   - In "transl": provide a natural, human-sounding English translation that captures mood and idioms (e.g. render “moy marmaladny” as “My honey”).
+7. Mixed Latin + non-Latin on the same line: romanize every syllable (leave Latin words unchanged).
+8. Escape newlines inside JSON strings as "\\n".
+9. Do not add any explanation — return only the raw JSON object.
+
+NOTE: If a line is mixed English and other language, do romanize and translate it.
+
+Example output:
+{"rom":"[00:01.00] konnichiwa\\n[00:02.00]","transl":"[00:01.00] Hello\\n[00:02.00]"}
+
+--
+Handling a purely English line:
+Original: [00:10.00] I don't care if it hurts
+rom: [00:10.00]
+transl: [00:10.00]
+--
+
+Also check the title as it may be present in the translation of non English songs that has English title.
+`.trim();
+	const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
         const combinedPrompt = `${systemIns}\n\n${userPrompt}`;
         const providers = [
             googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-flash-latest"),
