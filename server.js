@@ -11,6 +11,14 @@ const rateLimit = require('express-rate-limit'); // For rate limiting
 const app = express();
 const port = process.env.PORT || 3000;
 
+// --- Custom Error for Flow Control ---
+class NoProvidersAvailableError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'NoProvidersAvailableError';
+  }
+}
+
 // --- Database Setup (Caching) ---
 const dbFile = './translations.db';
 const db = new sqlite3.Database(dbFile, (err) => {
@@ -31,39 +39,26 @@ const db = new sqlite3.Database(dbFile, (err) => {
 const inFlightRequests = new Map();
 
 // --- Security Middleware (DDOS Protection & Hardening) ---
-
-// 1. Set security-related HTTP headers with Helmet
 app.use(helmet());
-
-// 2. Configure the rate limiter
 const apiLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000, // 15 minutes
-	limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
-	standardHeaders: 'draft-7', // Recommended: draft-7 specifies `RateLimit` header names
-	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+	windowMs: 15 * 60 * 1000,
+	limit: 100,
+	standardHeaders: 'draft-7',
+	legacyHeaders: false,
     message: { error: 'Too many requests, please try again after 15 minutes.' },
 });
-
-// 3. Apply the rate limiting middleware to all API requests
 app.use('/api/', apiLimiter);
 
-
 // --- Standard Middleware ---
-app.use(cors()); // For a production app, restrict to https://open.spotify.com
-
-// 4. Limit request body size to prevent large payload attacks
+app.use(cors());
 app.use(express.json({ limit: '50kb' }));
-
 
 // --- API Keys from Environment Variables ---
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_API_KEY_2 = process.env.GOOGLE_API_KEY_2;
 const GOOGLE_API_KEY_3 = process.env.GOOGLE_API_KEY_3;
-// const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-// const CHUTES_API_KEY = process.env.CHUTES_API_KEY;
 
-// --- Helper Functions (tryParse, generateHash) ---
-// ... (These functions remain unchanged from the previous version)
+// --- Helper Functions (Unchanged) ---
 const tryParse = (text) => {
     if (!text) return null;
     const start = text.indexOf('{');
@@ -75,14 +70,11 @@ const tryParse = (text) => {
         return null;
     } catch { return null; }
 };
-
 function generateHash(text) {
     return crypto.createHash('sha256').update(text).digest('hex');
 }
 
-
-// --- AI Provider Functions (googleAI, huggingfaceAI, chutesAI) ---
-// ... (These functions remain unchanged from the previous version)
+// --- AI Provider Functions (Unchanged) ---
 async function googleAI(combinedPrompt, apiKey, modelName) {
     if (!apiKey) return Promise.reject(new Error(`Google AI (${modelName}) key is missing`));
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -93,23 +85,42 @@ async function googleAI(combinedPrompt, apiKey, modelName) {
     const content = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const parsed = tryParse(content);
     if (!parsed) throw new Error(`Google AI (${modelName}) parsing failed`);
-    console.log(`Success: Google AI (${modelName})`);
     return parsed;
 }
 
-// --- Main API Endpoint (remains the same) ---
+// --- Provider Management ---
+let providersConfig = [
+    { id: 'google1_gemini2.0-flash', key: GOOGLE_API_KEY,   model: 'gemini-2.0-flash', fn: googleAI, busy: false },
+    { id: 'google2_gemini2.0-flash', key: GOOGLE_API_KEY_2, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
+    { id: 'google3_gemini2.0-flash', key: GOOGLE_API_KEY_3, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
+    { id: 'google1_gemini1.5-flash', key: GOOGLE_API_KEY,   model: 'gemini-1.5-flash', fn: googleAI, busy: false },
+    { id: 'google2_gemini1.5-flash', key: GOOGLE_API_KEY_2, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
+    { id: 'google3_gemini1.5-flash', key: GOOGLE_API_KEY_3, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
+].filter(p => p.key); // Filter out providers without a configured key
+
+function getPrioritizedProviders() {
+    return [...providersConfig].sort((a, b) => a.busy - b.busy);
+}
+
+// --- Main API Endpoint ---
 app.post('/api/translate', async (req, res) => {
-    // ... The logic for caching, in-flight requests, and AI provider racing is unchanged
     const { lrcText, title } = req.body;
     if (!lrcText) return res.status(400).json({ error: 'lrcText is required in the request body.' });
     const lrcHash = generateHash(lrcText);
     console.log(`Request received for title: "${title || 'Unknown'}" (Hash: ${lrcHash.substring(0, 8)}...)`);
+
     if (inFlightRequests.has(lrcHash)) {
         console.log("Identical request in-flight. Awaiting result...");
         try {
             const result = await inFlightRequests.get(lrcHash);
             return res.json(result);
-        } catch (error) { return res.status(500).json({ error: "The initial request failed. Please try again." }); }
+        } catch (error) {
+            // Check if the in-flight request failed because providers were busy
+            if (error instanceof NoProvidersAvailableError) {
+                return res.status(503).set('Retry-After', 30).json({ error: error.message });
+            }
+            return res.status(500).json({ error: "The initial request failed. Please try again." });
+        }
     }
     try {
         const row = await new Promise((resolve, reject) => { db.get("SELECT rom, transl FROM cache WHERE hash = ?", [lrcHash], (err, row) => err ? reject(err) : resolve(row)); });
@@ -119,78 +130,85 @@ app.post('/api/translate', async (req, res) => {
         }
         console.log("Cache miss. Proceeding to AI providers.");
     } catch (dbError) { console.error("Database check failed:", dbError); }
+
     const fetchAndCache = async () => {
         const systemIns = `
 You are an LRC romanizer and translator.
-
 Your response must be a single valid JSON object with exactly two keys: "rom" and "transl". Each value is a string of properly formatted LRC lines. Output only the JSON object, no markdown or any extra formatting.
-
-Input structure per timestamp:
-- Original: the original lyric line (Latin or non-Latin).
-- Romanized: the performance-style romanization of non-Latin scripts, or blank (timestamp-only) for pure Latin/English lines.
-- Translated: the English translation of non-English lines, or blank (timestamp-only) for English lines.
-
 Rules:
 1. Preserve all metadata/tag lines (like [ti:], [ar:], [al:], credits) exactly as-is in both "rom" and "transl".
 2. Preserve every timestamp (e.g. [00:05.00]) exactly.
-3. For any line whose lyrics are entirely in English or any other Latin-alphabet script:
-   - In "rom": output only the timestamp (e.g. "[00:12.34]") with no text following.
-   - In "transl": output only the timestamp with no text following.
-4. For any instrumental or musical marker lines (e.g. ♪, [instrumental], etc.):
-   - Output only the timestamp in both "rom" and "transl".
-5. For non-Latin scripts:
-   - In "rom": romanize as sung (performance-style phonetics), respecting poetic readings and furigana.
-6. For non-English lines:
-   - In "transl": provide a natural, human-sounding English translation that captures mood and idioms (e.g. render “moy marmaladny” as “My honey”).
+3. For any line whose lyrics are entirely in English or any other Latin-alphabet script: In "rom" and "transl", output only the timestamp (e.g. "[00:12.34]") with no text following.
+4. For any instrumental or musical marker lines: Output only the timestamp in both "rom" and "transl".
+5. For non-Latin scripts: In "rom", romanize as sung (performance-style phonetics).
+6. For non-English lines: In "transl", provide a natural, human-sounding English translation.
 7. Mixed Latin + non-Latin on the same line: romanize every syllable (leave Latin words unchanged).
 8. Escape newlines inside JSON strings as "\\n".
 9. Do not add any explanation — return only the raw JSON object.
-
 NOTE: If a line is mixed English and other language, do romanize and translate it.
-
-Example output:
-{"rom":"[00:01.00] konnichiwa\\n[00:02.00]","transl":"[00:01.00] Hello\\n[00:02.00]"}
-
+Example output: {"rom":"[00:01.00] konnichiwa\\n[00:02.00]","transl":"[00:01.00] Hello\\n[00:02.00]"}
 --
 Handling a purely English line:
 Original: [00:10.00] I don't care if it hurts
 rom: [00:10.00]
 transl: [00:10.00]
 --
-
 Also check the title as it may be present in the translation of non English songs that has English title.
 `.trim();
-	const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
+        const userPrompt = `Title of song: ${title}\n\LRC input:\n${lrcText}`;
         const combinedPrompt = `${systemIns}\n\n${userPrompt}`;
-        const providers = [
-            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-2.0-flash"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-2.0-flash"),
-	    googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-2.0-flash"),
-            
-            googleAI(combinedPrompt, GOOGLE_API_KEY, "gemini-1.5-flash"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_2, "gemini-1.5-flash"),
-            googleAI(combinedPrompt, GOOGLE_API_KEY_3, "gemini-1.5-flash"),
-            
-        ];
-        try {
-            const result = await Promise.any(providers);
-            const finalResult = { rom: result.rom.replace(/\\n/g, '\n'), transl: result.transl.replace(/\\n/g, '\n') };
-            db.run("INSERT INTO cache (hash, rom, transl) VALUES (?, ?, ?)", [lrcHash, finalResult.rom, finalResult.transl], (err) => {
-                if (err) console.error("Failed to write to cache:", err.message);
-                else console.log("Result successfully cached.");
-            });
-            return finalResult;
-        } catch (error) {
-            console.error("All AI providers failed.", error.errors || error);
-            throw new Error("All AI providers failed.");
+
+        const prioritizedProviders = getPrioritizedProviders();
+
+        // **NEW**: Check if all providers are busy before proceeding.
+        if (!prioritizedProviders.length || prioritizedProviders[0].busy) {
+            console.warn("All providers are busy. Rejecting request temporarily.");
+            throw new NoProvidersAvailableError("All AI providers are currently busy. Please try again shortly.");
         }
+
+        let lastError = null;
+        for (const provider of prioritizedProviders) {
+            // Since we checked for busy state above, we can now attempt a request.
+            // If this provider is busy, the sort pushed it to the end, and we'll only
+            // reach it if all idle providers before it have failed.
+            if (provider.busy) continue;
+
+            try {
+                provider.busy = true;
+                console.log(`Attempting translation with provider: ${provider.id}`);
+                const result = await provider.fn(combinedPrompt, provider.key, provider.model);
+                console.log(`Success with provider: ${provider.id}`);
+                const finalResult = { rom: result.rom.replace(/\\n/g, '\n'), transl: result.transl.replace(/\\n/g, '\n') };
+                db.run("INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)", [lrcHash, finalResult.rom, finalResult.transl], (err) => {
+                    if (err) console.error("Failed to write to cache:", err.message);
+                    else console.log("Result successfully cached.");
+                });
+                return finalResult;
+            } catch (error) {
+                console.error(`Provider ${provider.id} failed:`, error.message);
+                lastError = error;
+            } finally {
+                provider.busy = false; // Free up the provider
+            }
+        }
+
+        console.error("All available AI providers failed.", lastError);
+        throw new Error("All AI providers failed.");
     };
+
     const promise = fetchAndCache();
     inFlightRequests.set(lrcHash, promise);
     try {
         const finalResult = await promise;
         res.json(finalResult);
-    } catch (error) { res.status(503).json({ error: "Service Unavailable: All AI translation providers failed." }); } finally {
+    } catch (error) {
+        // **NEW**: Specific handling for the "all busy" case
+        if (error instanceof NoProvidersAvailableError) {
+            res.status(503).set('Retry-After', 30).json({ error: error.message });
+        } else {
+            res.status(503).json({ error: "Service Unavailable: All AI translation providers failed." });
+        }
+    } finally {
         inFlightRequests.delete(lrcHash);
     }
 });
@@ -205,11 +223,15 @@ server.setTimeout(30000); // 30 seconds
 
 // --- Graceful Shutdown ---
 process.on('SIGINT', () => {
-    db.close((err) => {
-        if (err) {
-            console.error(err.message);
-        }
-        console.log('Closed the database connection.');
-        process.exit(0);
+    console.log('Shutting down gracefully...');
+    server.close(() => {
+        console.log('Server closed.');
+        db.close((err) => {
+            if (err) {
+                console.error(err.message);
+            }
+            console.log('Closed the database connection.');
+            process.exit(0);
+        });
     });
 });
