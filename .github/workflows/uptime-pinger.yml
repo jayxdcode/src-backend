@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Curl the Render app
-        run: curl -sSf https://your-render-url.onrender.com || echo "Render ping failed"
+        run: curl -sSf https://src-backend.onrender.com || echo "Render ping failed"
