@@ -8,8 +8,8 @@
 // @grant        GM.xmlHttpRequest
 // @connect      genuis.com
 // @connect      google.com
-// @credits      2025, jayxdcode
-// @updateURL    https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
+// @cooyright      2025, jayxdcode
+// @updateURL https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
 // ==/UserScript==
 
 
