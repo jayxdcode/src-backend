@@ -1,4 +1,4 @@
-r// Load environment variables from the .env file
+// Load environment variables from the .env file
 require('dotenv').config();
 
 const express = require('express');
