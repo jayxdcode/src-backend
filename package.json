@@ -17,6 +17,6 @@
     "express-rate-limit": "^7.2.0",
     "helmet": "^7.1.0",
     "axios": "^1.9.0",
-    "cheerio": "^1.1 0"
+    "cheerio": "^1.1.0"
   }
 }
