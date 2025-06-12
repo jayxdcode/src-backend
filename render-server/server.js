@@ -182,7 +182,7 @@ app.get('/', async (req, res) => {
 
 // --- Main API Endpoint ---
 app.post('/api/translate', async (req, res) => {
-    const { lrcText, title, artist } = req.body;
+    const { lrcText, geniusTr, title, artist } = req.body;
     if (!lrcText) return res.status(400).json({ error: 'lrcText is required in the request body.' });
     const lrcHash = generateHash(lrcText);
     console.log(`Request received for title: "${title || 'Unknown'}"`);
@@ -219,47 +219,7 @@ app.post('/api/translate', async (req, res) => {
     }
 
     // --- Integrated Genius Scraper ---
-    let geniusLyrics = null;
-    if (title && artist) {
-        try {
-            const searchQuery = `${title} ${artist} English Translation`;
-            console.log(`Attempting to find Genius translation for: "${searchQuery}"`);
-            const searchUrl = `https://genius.com/search?q=${encodeURIComponent(searchQuery)}`;
-            const searchHtml = await axios.get(searchUrl, headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'});
-            const $ = cheerio.load(searchHtml.data);
-
-            let geniusUrl = null;
-            $('mini-song-card a').each((_, el) => {
-                const href = $(el).attr('href');
-                const text = $(el).text();
-                if (href && text.includes('Genius English Translations')) {
-                    geniusUrl = href;
-                    return false; // Break loop
-                }
-            });
-
-            if (geniusUrl) {
-                console.log(`Found Genius URL: ${geniusUrl}`);
-                const lyricsHtml = await axios.get(geniusUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-                const $$ = cheerio.load(lyricsHtml.data);
-                const lyrics = $$('div[data-lyrics-container="true"]')
-                    .filter((_, el) => !el.attribs['data-exclude-from-selection'])
-                    .map((_, el) => $$(el).text().trim())
-                    .get()
-                    .join('\n\n');
-
-                if (lyrics) {
-                    geniusLyrics = lyrics;
-                    console.log("Successfully scraped Genius lyrics.");
-		    console.log(`Genius: \n\n${lyrics}`);
-                }
-            } else {
-                console.log("No 'Genius English Translations' link found in search results.");
-            }
-        } catch (err) {
-            console.warn(`Genius scraping failed for "${title}": ${err.message}. Proceeding with AI translation.`);
-        }
-    }
+    const geniusLyrics = geniusTr !== '' ? geniusTr : null;
 
     const fetchAndCache = async () => {
         // --- AI System Prompts ---
