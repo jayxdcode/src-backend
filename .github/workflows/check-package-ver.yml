@@ -1,0 +1,33 @@
+name: Check Package Version
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'NPM package name to check'
+        required: true
+        default: 'cheerio'
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Initialize npm project
+        run: npm init -y
+
+      - name: Install latest version of input package
+        run: npm install ${{ github.event.inputs.package }}@latest
+
+      - name: Print installed version
+        run: |
+          echo "Installed version of ${{ github.event.inputs.package }}:"
+          node -p "require('${{ github.event.inputs.package }}/package.json').version"
