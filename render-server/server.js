@@ -229,9 +229,9 @@ Rules:
 2. Preserve every timestamp (e.g. [00:05.00]) exactly.
 3. For any line whose lyrics are entirely in English or any other Latin-alphabet script: In "rom" and "transl", output only the timestamp (e.g. "[00:12.34]") with no text following.
 4. For any instrumental or musical marker lines: Output only the timestamp in both "rom" and "transl".
-5. For non-Latin scripts: In "rom", romanize as sung (performance-style phonetics).
+5. For non-Eglish or generally, non Latin scripts: In "rom", romanize as sung (performance-style phonetics).
 6. For non-English lines: In "transl", provide a natural, human-sounding English translation.
-7. Mixed Latin + non-Latin on the same line: romanize every syllable (leave Latin words unchanged).
+7. Mixed Latin + non-Latin on the same line: romanize every syllable (leave Latin words unchanged but remember to just return the timestamp if its fully English or generally, Latin script alphabet).
 8. Escape newlines inside JSON strings as "\\n".
 9. Do not add any explanation — return only the raw JSON object.
 NOTE: If a line is mixed English and other language, do romanize and translate it.
