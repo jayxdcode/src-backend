@@ -225,7 +225,7 @@ app.post('/api/translate', async (req, res) => {
             const searchQuery = `${title} ${artist} English Translation`;
             console.log(`Attempting to find Genius translation for: "${searchQuery}"`);
             const searchUrl = `https://genius.com/search?q=${encodeURIComponent(searchQuery)}`;
-            const searchHtml = await axios.get(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const searchHtml = await axios.get(searchUrl, headers: {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'});
             const $ = cheerio.load(searchHtml.data);
 
             let geniusUrl = null;
