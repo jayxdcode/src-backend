@@ -9,7 +9,7 @@
 // @connect      genuis.com
 // @connect      google.com
 // @cooyright      2025, jayxdcode
-// @updateURL https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
+// @updateURL  https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
 // ==/UserScript==
 
 
