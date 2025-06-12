@@ -1,4 +1,4 @@
-// Load environment variables from the .env file
+r// Load environment variables from the .env file
 require('dotenv').config();
 
 const express = require('express');
@@ -182,10 +182,12 @@ app.get('/', async (req, res) => {
 
 // --- Main API Endpoint ---
 app.post('/api/translate', async (req, res) => {
-    const { lrcText, title } = req.body;
+    const { lrcText, title, artist } = req.body;
     if (!lrcText) return res.status(400).json({ error: 'lrcText is required in the request body.' });
     const lrcHash = generateHash(lrcText);
-    console.log(`Request received for title: "${title || 'Unknown'}" (Hash: ${lrcHash.substring(0, 8)}...)`);
+    console.log(`Request received for title: "${title || 'Unknown'}"`);
+    console.log(`Artist: "${artist || 'Unknown'}"`);
+    console.log(`Raw lrc Hash: ${lrcHash.substring(0, 8)}...)`);
 
     if (inFlightRequests.has(lrcHash)) {
         console.log("Identical request in-flight. Awaiting result...");
@@ -218,9 +220,9 @@ app.post('/api/translate', async (req, res) => {
 
     // --- Integrated Genius Scraper ---
     let geniusLyrics = null;
-    if (title) {
+    if (title && artist) {
         try {
-            const searchQuery = `${title} English Translation`;
+            const searchQuery = `${title} ${artist} English Translation`;
             console.log(`Attempting to find Genius translation for: "${searchQuery}"`);
             const searchUrl = `https://genius.com/search?q=${encodeURIComponent(searchQuery)}`;
             const searchHtml = await axios.get(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -249,6 +251,7 @@ app.post('/api/translate', async (req, res) => {
                 if (lyrics) {
                     geniusLyrics = lyrics;
                     console.log("Successfully scraped Genius lyrics.");
+		    console.log(`Genius: \n\n${lyrics}`);
                 }
             } else {
                 console.log("No 'Genius English Translations' link found in search results.");
