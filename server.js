@@ -8,6 +8,8 @@ const { createClient } = require('@libsql/client');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const os = require('os'); // For system status
+const axios = require('axios');
+const cheerio = require('cheerio');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -214,8 +216,51 @@ app.post('/api/translate', async (req, res) => {
         console.error("Database check failed:", dbError); 
     }
 
+    // --- Integrated Genius Scraper ---
+    let geniusLyrics = null;
+    if (title) {
+        try {
+            const searchQuery = `${title} English Translation`;
+            console.log(`Attempting to find Genius translation for: "${searchQuery}"`);
+            const searchUrl = `https://genius.com/search?q=${encodeURIComponent(searchQuery)}`;
+            const searchHtml = await axios.get(searchUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+            const $ = cheerio.load(searchHtml.data);
+
+            let geniusUrl = null;
+            $('mini-song-card a').each((_, el) => {
+                const href = $(el).attr('href');
+                const text = $(el).text();
+                if (href && text.includes('Genius English Translations')) {
+                    geniusUrl = href;
+                    return false; // Break loop
+                }
+            });
+
+            if (geniusUrl) {
+                console.log(`Found Genius URL: ${geniusUrl}`);
+                const lyricsHtml = await axios.get(geniusUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+                const $$ = cheerio.load(lyricsHtml.data);
+                const lyrics = $$('div[data-lyrics-container="true"]')
+                    .filter((_, el) => !el.attribs['data-exclude-from-selection'])
+                    .map((_, el) => $$(el).text().trim())
+                    .get()
+                    .join('\n\n');
+
+                if (lyrics) {
+                    geniusLyrics = lyrics;
+                    console.log("Successfully scraped Genius lyrics.");
+                }
+            } else {
+                console.log("No 'Genius English Translations' link found in search results.");
+            }
+        } catch (err) {
+            console.warn(`Genius scraping failed for "${title}": ${err.message}. Proceeding with AI translation.`);
+        }
+    }
+
     const fetchAndCache = async () => {
-        const systemIns = `
+        // --- AI System Prompts ---
+        const systemInsDefault = `
 You are an LRC romanizer and translator.
 Your response must be a single valid JSON object with exactly two keys: "rom" and "transl". Each value is a string of properly formatted LRC lines. Output only the JSON object, no markdown or any extra formatting.
 Rules:
@@ -238,8 +283,39 @@ transl: [00:10.00]
 --
 Also check the title as it may be present in the translation of non English songs that has English title.
 `.trim();
-        const userPrompt = `Title of song: ${title}\n\LRC input:\n${lrcText}`;
-        const combinedPrompt = `${systemIns}\n\n${userPrompt}`;
+
+        const systemInsGenius = `
+You are an expert LRC file formatter. You will be given an original LRC file and a pre-existing English translation.
+Your task is to combine these into a single valid JSON object with two keys: "rom" (romanization) and "transl" (the provided translation, aligned).
+Your response must be a single valid JSON object. Output only the JSON object, no markdown or any extra formatting.
+
+Rules for "rom" (Romanization):
+1. From the original LRC, romanize any non-Latin script lyrics as they are sung (performance-style phonetics).
+2. If a line in the original LRC is entirely in English or other Latin script, output only the timestamp for that line (e.g., "[00:12.34]").
+3. For mixed Latin + non-Latin lines, romanize the non-Latin parts and keep the Latin parts as they are.
+4. Preserve all metadata ([ti:]) and timestamps exactly as they appear in the original LRC.
+5. For instrumental lines, output only the timestamp.
+
+Rules for "transl" (Translation Alignment):
+1. Use the "Pre-existing English Translation" provided below. Your main job is to ALIGN its phrases with the timestamps from the original LRC.
+2. If a line in the original LRC has no translatable content (e.g., it's instrumental or already English), output only the timestamp for that line in "transl".
+3. Preserve all metadata ([ti:]) and timestamps exactly as they appear in the original LRC.
+
+General Rules:
+- Escape newlines inside JSON strings as "\\n".
+- Do not add any explanation — return only the raw JSON object.
+`.trim();
+
+        let combinedPrompt;
+        if (geniusLyrics) {
+            console.log("Using Genius-based prompt.");
+            const userPrompt = `Title of song: ${title}\n\nOriginal LRC input:\n${lrcText}\n\nPre-existing English Translation to use:\n${geniusLyrics}`;
+            combinedPrompt = `${systemInsGenius}\n\n${userPrompt}`;
+        } else {
+            console.log("Using default translation prompt.");
+            const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
+            combinedPrompt = `${systemInsDefault}\n\n${userPrompt}`;
+        }
 
         const prioritizedProviders = getPrioritizedProviders();
 
