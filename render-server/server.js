@@ -8,8 +8,6 @@ const { createClient } = require('@libsql/client');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const os = require('os'); // For system status
-const axios = require('axios');
-const cheerio = require('cheerio');
 
 const app = express();
 const port = process.env.PORT || 3000;
