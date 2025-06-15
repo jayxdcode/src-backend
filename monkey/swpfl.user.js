@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         [Genius + AI Translations] Spotify Web Player Floating Lyrics
+// @name         [AI Translations] Spotify Web Player Floating Lyrics
 // @namespace    http://tampermonkey.net/
-// @version      2025.06.15-1
-// @description  Client-side Genius scraping + AI backend. Synced lyrics with translation/romanization, robust merging, accurate LRC parsing, resizable/draggable panel, themed, opacity control.
+// @version      2025.06.15-2
+// @description  Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).
 // @author       jayxdcode
 // @match        https://open.spotify.com/*
 // @grant        GM_log
@@ -14,8 +14,8 @@
 // @connect      google.com
 // @copyright    2025, jayxdcode
 // @sandbox      JavaScript
-// @downloadURL  https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
-// @updateURL    https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js
+// @downloadURL  https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js?dl=true
+// @updateURL    https://raw.githubusercontent.com/jayxdcode/src-backend/main/monkey/swpfl.user.js?dl=true
 // ==/UserScript==
 
 (function() {

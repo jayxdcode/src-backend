@@ -134,17 +134,21 @@ function getPrioritizedProviders() {
     return [...providersConfig].sort((a, b) => a.busy - b.busy);
 }
 
-// --- Status Endpoint (Root) ---
 app.get('/', async (req, res) => {
-    let dbStatus = 'disconnected';
+    res.text("I'm too lazy for a homepage lol. Go to /status for current status (not real-time tho)")
+});
+
+// --- Status Endpoint ---
+app.get('/status', async (req, res) => {
+    // let dbStatus = 'disconnected';
     let dbLatency = -1;
 
     try {
         const startTime = performance.now();
-        await db.execute('SELECT 1'); // Simple, fast query to check connection
+        // await db.execute('SELECT 1'); // Simple, fast query to check connection
         const endTime = performance.now();
         dbStatus = 'connected';
-        dbLatency = parseFloat((endTime - startTime).toFixed(2));
+        // dbLatency = parseFloat((endTime - startTime).toFixed(2));
     } catch (error) {
         console.error("Health check DB ping failed:", error.message);
     }
