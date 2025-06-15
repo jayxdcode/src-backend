@@ -135,7 +135,9 @@ function getPrioritizedProviders() {
 }
 
 app.get('/', async (req, res) => {
-    res.text("I'm too lazy for a homepage lol. Go to /status for current status (not real-time tho)")
+    const text = "I'm too lazy for a homepage lol. Go to /status for current status (not real-time tho)"
+    
+    res.send(text)
 });
 
 // --- Status Endpoint ---
