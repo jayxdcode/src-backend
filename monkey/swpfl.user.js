@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         [AI Translations] Spotify Web Player Floating Lyrics
 // @namespace    http://tampermonkey.net/
-// @version      2025.06.15-2
+// @version      2025.06.15-3
 // @description  Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).
 // @author       jayxdcode
 // @match        https://open.spotify.com/*
@@ -46,6 +46,8 @@
     let currentOpacity = parseFloat(localStorage.getItem(OPACITY_KEY)) || 0.85;
     let currentTheme = localStorage.getItem(THEME_KEY) || 'dark';
     let lastRenderedIdx = -1;
+    
+    let logVisible = false;
     
     // --- Utility Functions ---
     function debounce(func, wait) {
@@ -313,6 +315,9 @@
         title.id = 'tm-header-title';
         title.innerHTML = dragLocked ? '<b>Lyrics (Locked)</b>' : '<b>Lyrics</b>';
         header.appendChild(title);
+        
+        detectLongClick(title, toggleLogVisibility, null, 1000);
+        
         const controls = document.createElement('div');
         Object.assign(controls.style, { display: 'flex', gap: '8px', alignItems: 'center' });
         const opDown = document.createElement('button');
@@ -500,6 +505,88 @@
                 });
         }
     }
+    
+    function toggleLogVisibility() {
+        const logs = document.getElementById('tm-logs');
+        logs.style.display = logVisible ? 'block' : 'none';
+        logVisible = logVisible ? false : true;
+    }
+    
+    /**
+ * Attaches a long click detection to a DOM element.
+ *
+ * @param {HTMLElement} element The DOM element to attach the listener to.
+ * @param {function} onLongClick Callback function to execute when a long click is detected.
+ * @param {function} [onShortClick] Optional callback for a short click. If not provided,
+ * only long clicks will trigger a callback.
+ * @param {number} [longClickThreshold=500] The duration in milliseconds to consider a click "long".
+ */
+function detectLongClick(element, onLongClick, onShortClick, longClickThreshold = 500) {
+    let pressTimer;
+    let isLongClickTriggered = false; // Flag to prevent short click after long click
+
+    if (!element || typeof onLongClick !== 'function') {
+        console.error("detectLongClick: Invalid element or onLongClick callback provided.");
+        return;
+    }
+
+    const startTimer = () => {
+        isLongClickTriggered = false; // Reset flag for new press
+        pressTimer = setTimeout(() => {
+            isLongClickTriggered = true;
+            onLongClick();
+        }, longClickThreshold);
+    };
+
+    const clearTimer = () => {
+        clearTimeout(pressTimer);
+    };
+
+    // --- Mouse Events ---
+    element.addEventListener('mousedown', (event) => {
+        // Prevent right-click from triggering long-click for mouse events
+        if (event.button === 2) {
+            return;
+        }
+        startTimer();
+    });
+
+    element.addEventListener('mouseup', () => {
+        clearTimer();
+        // Only trigger short click if long click wasn't triggered
+        if (!isLongClickTriggered && typeof onShortClick === 'function') {
+            onShortClick();
+        }
+    });
+
+    // If mouse leaves the element while pressed (important to clear timer)
+    element.addEventListener('mouseleave', () => {
+        clearTimer();
+        // Reset long click flag if mouse leaves, preventing accidental short click if re-entered
+        isLongClickTriggered = false;
+    });
+
+    // --- Touch Events ---
+    // Using passive: true for better scroll performance. If you need to prevent default
+    // browser behavior (like scrolling/zooming on touch), set to false and handle `event.preventDefault()`.
+    element.addEventListener('touchstart', (event) => {
+        // event.preventDefault(); // Uncomment if you need to prevent default touch behaviors
+        startTimer();
+    }, { passive: true });
+
+    element.addEventListener('touchend', () => {
+        clearTimer();
+        if (!isLongClickTriggered && typeof onShortClick === 'function') {
+            onShortClick();
+        }
+    }, { passive: true });
+
+    element.addEventListener('touchcancel', () => {
+        clearTimer();
+        isLongClickTriggered = false; // Reset if touch is interrupted (e.g., phone call)
+    }, { passive: true });
+}
+
     
     
     async function parseAl(url = null) {
