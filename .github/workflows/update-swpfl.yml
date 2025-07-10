@@ -24,27 +24,28 @@ jobs:
         run: |
           sed -n '/\/\/ -- begin --/,/\/\/ -- end --/p' script.user.js \
             | sed '1d;$d' \
-            | sed 's/^ {4}//' \
+            | sed 's/^    //' \
             > firefoxExtInstall/swpfl/swpfl.js
 
       - name: Replace storage & GM_ APIs
         run: |
           sed -E -i \
-            -e "s@localStorage\.getItem(\"([^\"]+)\")@await browser.storage.local.get(\"\\1\").then(r=>r[\"\\1\"])@g" \
-            -e "s@localStorage\.setItem(\"([^\"]+)\",[ ]*(.+))@await browser.storage.local.set({ \"\\1\": \2 })@g" \
-            -e "s@localStorage\.removeItem(\"([^\"]+)\")@await browser.storage.local.remove(\"\\1\")@g" \
-            -e "s@GM_getValue(\"([^\"]+)\")@await browser.storage.local.get(\"\\1\").then(r=>r[\"\\1\"])@g" \
-            -e "s@GM_setValue(\"([^\"]+)\",[ ]*(.+))@await browser.storage.local.set({ \"\\1\": \2 })@g" \
-            -e "s@GM_deleteValue(\"([^\"]+)\")@await browser.storage.local.remove(\"\\1\")@g" \
+            -e "s@localStorage.getItem\(\"([^\"]+)\"\)@await browser.storage.local.get(\"\\1\").then(r=>r[\"\\1\"])@g" \
+            -e "s@localStorage.setItem\(\"([^\"]+)\",[ ]*(.+)\)@await browser.storage.local.set({ \"\\1\": \2 })@g" \
+            -e "s@localStorage.removeItem\(\"([^\"]+)\"\)@await browser.storage.local.remove(\"\\1\")@g" \
+            -e "s@GM_getValue\(\"([^\"]+)\"\)@await browser.storage.local.get(\"\\1\").then(r=>r[\"\\1\"])@g" \
+            -e "s@GM_setValue\(\"([^\"]+)\",[ ]*(.+)\)@await browser.storage.local.set({ \"\\1\": \2 })@g" \
+            -e "s@GM_deleteValue\(\"([^\"]+)\"\)@await browser.storage.local.remove(\"\\1\")@g" \
             -e "s@GM_xmlhttpRequest@fetch@g" \
-            -e "s@GM_addStyle@(function\(css\){ var s=document.createElement(\"style\"); s.textContent=css; document.head.appendChild(s); })@g" \
+            -e "s@GM_addStyle@(function(css){ var s=document.createElement(\"style\"); s.textContent=css; document.head.appendChild(s); })@g" \
             -e "s@GM_download\(([^)]+)\)@browser.downloads.download(\1)@g" \
             firefoxExtInstall/swpfl/swpfl.js
 
       - name: Sync manifest version
         id: bump_version
         run: |
-          version=$(grep -m1 "^// *@version" script.user.js | sed -E 's@^// *@version[[:space:]]+(.+)@\1@')
+          version=$(grep -m1 '^// @version' script.user.js | awk '{print $3}')
+          echo "Parsed version: $version"
           jq ".version = \"${version}\"" firefoxExtInstall/swpfl/manifest.json > manifest.tmp.json
           mv manifest.tmp.json firefoxExtInstall/swpfl/manifest.json
           echo "version=$version" >> $GITHUB_OUTPUT
@@ -55,20 +56,17 @@ jobs:
 
       - name: Create GitHub Release
         id: create_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.bump_version.outputs.version }}
-          release_name: Extension v${{ steps.bump_version.outputs.version }}
+          name: Extension v${{ steps.bump_version.outputs.version }}
           draft: false
           prerelease: false
 
       - name: Upload ZIP to Release
-        uses: actions/upload-release-asset@v1
+        uses: softprops/action-gh-release@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: firefoxExtInstall/swpfl.zip
-          asset_name: swpfl-${{ steps.bump_version.outputs.version }}.zip
-          asset_content_type: application/zip
+          files: firefoxExtInstall/swpfl.zip
 
       - name: Commit & push changes
         run: |
