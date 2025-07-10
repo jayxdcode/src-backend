@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         [AI Translations] Spotify Web Player Floating Lyrics
 // @namespace    http://tampermonkey.net/
-// @version      2025.07.10-0
+// @version      2025.07.10-1
 // @description  Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).
 // @author       jayxdcode
 // @match        https://open.spotify.com/*
@@ -21,6 +21,7 @@
 (function() {
     'use strict';
 
+// -- begin --
     const mobileDebug = true; // only set to true if you have eruda.
 
     const BACKEND_URL = "https://src-backend.onrender.com/api/translate";
@@ -998,5 +999,5 @@
         }
     });
     readyObserver.observe(document.body, { childList: true, subtree: true });
-
+// -- end --
 })();

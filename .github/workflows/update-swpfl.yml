@@ -1,0 +1,63 @@
+name: Sync Tampermonkey to Firefox Extension
+
+on:
+  push:
+    paths:
+      - 'monkey/swpfl.user.js'
+      - '.github/workflows/update-swpfl.yml'
+  workflow_dispatch: {}
+
+jobs:
+  build-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare userscript file
+        run: |
+          cp monkey/swpfl.user.js script.user.js
+
+      - name: Extract content between markers
+        run: |
+          # Extract lines between '// -- begin --' and '// -- end --', excluding the markers themselves
+          sed -n '/\/\/ -- begin --/,/\/\/ -- end --/p' script.user.js \
+            | sed '1d;$d' \
+            > firefoxExtInstall/swpfl/swpfl.js
+
+      - name: Replace storage & GM_ APIs
+        run: |
+          sed -E -i \
+            -e 's@localStorage\.getItem\(["'"']([^"'"']+)["'"']\)@await browser.storage.local.get("\1").then(r=>r["\1"])@g' \
+            -e 's@localStorage\.setItem\(["'"']([^"'"']+)["'"'],[ ]*(.+)\)@await browser.storage.local.set({"\1": \2})@g' \
+            -e 's@localStorage\.removeItem\(["'"']([^"'"']+)["'"']\)@await browser.storage.local.remove("\1")@g' \
+            -e 's@GM_getValue\(["'"']([^"'"']+)["'"']\)@await browser.storage.local.get("\1").then(r=>r["\1"])@g' \
+            -e 's@GM_setValue\(["'"']([^"'"']+)["'"'],[ ]*(.+)\)@await browser.storage.local.set({"\1": \2})@g' \
+            -e 's@GM_deleteValue\(["'"']([^"'"']+)["'"']\)@await browser.storage.local.remove("\1")@g' \
+            -e 's@GM_xmlhttpRequest@fetch@g' \
+            -e 's@GM_addStyle@(function(css){ var s = document.createElement("style"); s.textContent = css; document.head.appendChild(s); })@g' \
+            -e 's@GM_download\(([^)]+)\)@browser.downloads.download(\1)@g' \
+            firefoxExtInstall/swpfl/swpfl.js
+
+      - name: Sync manifest version
+        id: bump_version
+        run: |
+          version=$(grep -m1 "^// *@version" script.user.js | sed -E 's@^// *@version[[:space:]]+(.+)@\1@')
+          jq ".version = \"${version}\"" firefoxExtInstall/swpfl/manifest.json \
+            > firefoxExtInstall/swpfl/manifest.tmp.json
+          mv firefoxExtInstall/swpfl/manifest.tmp.json firefoxExtInstall/swpfl/manifest.json
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Commit & push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add firefoxExtInstall/swpfl/swpfl.js firefoxExtInstall/swpfl/manifest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: sync extension to version ${{ steps.bump_version.outputs.version }}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
