@@ -60,7 +60,7 @@ jobs:
           mv firefoxExtInstall/swpfl.zip firefoxExtInstall/packages/swpfl-${{ steps.bump_version.outputs.version }}.zip
 
       - name: Upload extension artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: swpfl-extension-${{ steps.bump_version.outputs.version }}
           path: firefoxExtInstall/packages/swpfl-${{ steps.bump_version.outputs.version }}.zip
