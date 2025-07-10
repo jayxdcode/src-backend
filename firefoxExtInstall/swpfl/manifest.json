@@ -1,24 +1,25 @@
 {
   "manifest_version": 2,
   "name": "Spotify Web Player Floating Lyrics (swpfl)",
-  "version": "2025.07.10-0",
-  
+  "version": "2025.07.10-1",
   "description": "Firefox extensions release of swpfl (originally a Tampermonkey userscript). Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).",
-  
   "browser_specific_settings": {
     "gecko": {
       "id": "swpfl@jayxdcode.github.io"
     }
   },
-  
   "icons": {
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
   },
-  
   "content_scripts": [
-  {
-    "matches": ["*://*.spotify.com"],
-    "js": ["swpfl.js"]
-  }]
+    {
+      "matches": [
+        "*://*.spotify.com"
+      ],
+      "js": [
+        "swpfl.js"
+      ]
+    }
+  ]
 }
