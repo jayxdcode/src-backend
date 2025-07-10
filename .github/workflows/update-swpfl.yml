@@ -52,7 +52,7 @@ jobs:
 
       - name: Package extension folder
         run: |
-          cd firefoxExtInstall && zip -r swpfl.zip swpfl
+          cd firefoxExtInstall/swpfl && zip -r ../swpfl.zip
 
       - name: Prepare packages folder
         run: |
