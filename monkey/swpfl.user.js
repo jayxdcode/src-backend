@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         [AI Translations] Spotify Web Player Floating Lyrics
 // @namespace    http://tampermonkey.net/
-// @version      2025.07.10-1
+// @version      2.5.4
 // @description  Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).
 // @author       jayxdcode
 // @match        https://open.spotify.com/*
