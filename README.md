@@ -24,7 +24,7 @@ Features:
 - **Requires Payment:** ❌
 - **Categories:** Photos, Music & Videos
 - **Tags:** music
-- **UUID:** `swpfl@jayxdc0de.github.io`
+- **UUID:** `swpfl@jayxdcode.github.io`
 
 ## 📬 Contact
 - **Email:** [jayxdcode@proton.me](mailto:jayxdcode@proton.me)
