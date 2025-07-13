@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         [AI Translations] Spotify Web Player Floating Lyrics
 // @namespace    http://tampermonkey.net/
-// @version      2.6.0
+// @version      2.6.1
 // @description  Synced lyrics with translation/romanization resizable/draggable panel, themed, opacity control. Translations are provided by Gemini 2.0 Flash and 1.5 Flash via the Google AI Studio API (Accessed via a remote server).
 // @author       jayxdcode
 // @match        https://open.spotify.com/*
@@ -606,7 +606,7 @@
         } else {
             // Use custom fetchViaBackground if GM_xmlhttpRequest is not available
             // Ensure fetchViaBackground is accessible in this scope (e.g., defined in the same content script)
-            return fetchViaBackground(url, { headers }) // Call your custom function here
+            return fetchViaBackground(url, { "headers": { headers } }) // Call your custom function here
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
