@@ -1,4 +1,4 @@
-?name: Sync Tampermonkey to Firefox Extension
+name: Sync Tampermonkey to Firefox Extension
 
 on:
   push:
