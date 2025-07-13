@@ -40,11 +40,12 @@ Unauthorized copying, distribution, modification, or use of this software, in wh
 ```
 
 ## 🖼️ Screenshots
-<div style="display: flex; justify-items: 'space-between'; width: 100%;">
-    <img src="https://addons.mozilla.org/user-media/previews/full/325/325881.png?modified=1752131849)" height="650px"/> 
-    <img src="https://addons.mozilla.org/user-media/previews/full/325/325882.png?modified=1752131849)" height="650px"/> 
-    <img src="https://addons.mozilla.org/user-media/previews/full/325/325883.png?modified=1752131849)" height="650px"/> 
+<div style="display: flex; justify-content: space-around; align-items: flex-start; flex-wrap: wrap;">
+    <img src="https://addons.mozilla.org/user-media/previews/full/325/325881.png?modified=1752131849)" style="width: 30%; height: auto; margin: 5px;"/>
+    <img src="https://addons.mozilla.org/user-media/previews/full/325/325882.png?modified=1752131849)" style="width: 30%; height: auto; margin: 5px;"/>
+    <img src="https://addons.mozilla.org/user-media/previews/full/325/325883.png?modified=1752131849)" style="width: 30%; height: auto; margin: 5px;"/>
 </div>
+
 
 ---
 
