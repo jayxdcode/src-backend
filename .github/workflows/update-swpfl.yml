@@ -48,6 +48,8 @@ jobs:
           jq ".version = \"${version}\"" firefoxExtInstall/swpfl/manifest.json > manifest.tmp.json
           mv manifest.tmp.json firefoxExtInstall/swpfl/manifest.json
           echo "version=$version" >> $GITHUB_OUTPUT
+          echo '{"current": "'"$version"'"}' | jq . > /version.json
+
 
       - name: Package extension folder
         run: |

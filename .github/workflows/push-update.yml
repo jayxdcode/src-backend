@@ -1,0 +1,41 @@
+name: "Update Firefox Extension on AMO via web-ext"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Sign & Upload via web-ext
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Read current version
+        id: get_version
+        run: |
+          VERSION=$(jq -r .current version.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Sign & upload
+        # supply your JWT issuer and JWT secret as the API key/secret
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          ARCHIVE="firefoxExtInstall/packages/swpfl-${{ steps.get_version.outputs.version }}.zip"
+          echo "Uploading $ARCHIVE to AMO via web-ext"
+          web-ext sign \
+            --api-key "$WEB_EXT_API_KEY" \
+            --api-secret "$WEB_EXT_API_SECRET" \
+            --source-dir "./${ARCHIVE}" \
+            --artifact-dir signed-artifacts \
+            --channel listed
+
+      - name: Output result
+        run: |
+          echo "Signed artifacts are in signed-artifacts/"
+          ls -lh signed-artifacts/
