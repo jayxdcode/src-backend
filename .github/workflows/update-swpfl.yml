@@ -48,7 +48,7 @@ jobs:
           jq ".version = \"${version}\"" firefoxExtInstall/swpfl/manifest.json > manifest.tmp.json
           mv manifest.tmp.json firefoxExtInstall/swpfl/manifest.json
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo '{"current": "'"$version"'"}' | jq . > /version.json
+          echo '{"current": "$version"}' > version.json
 
 
       - name: Package extension folder
@@ -70,7 +70,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add firefoxExtInstall/packages/swpfl-${{ steps.bump_version.outputs.version }}.zip firefoxExtInstall/swpfl/swpfl.js firefoxExtInstall/swpfl/manifest.json
+          git add firefoxExtInstall/packages/swpfl-${{ steps.bump_version.outputs.version }}.zip firefoxExtInstall/swpfl/swpfl.js firefoxExtInstall/swpfl/manifest.json version.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: sync extension v${{ steps.bump_version.outputs.version }} and package zip"
             git push
