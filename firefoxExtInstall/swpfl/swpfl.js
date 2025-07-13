@@ -582,7 +582,7 @@ function gmFetch(url, headers = {}) {
     } else {
         // Use custom fetchViaBackground if GM_xmlhttpRequest is not available
         // Ensure fetchViaBackground is accessible in this scope (e.g., defined in the same content script)
-        return fetchViaBackground(url, { headers }) // Call your custom function here
+        return fetchViaBackground(url, { "headers": { headers } }) // Call your custom function here
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
