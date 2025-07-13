@@ -36,7 +36,6 @@ jobs:
             -e "s@GM_getValue\(\"([^\"]+)\"\)@await browser.storage.local.get(\"\\1\").then(r=>r[\"\\1\"])@g" \
             -e "s@GM_setValue\(\"([^\"]+)\",[ ]*(.+)\)@await browser.storage.local.set({ \"\\1\": \2 })@g" \
             -e "s@GM_deleteValue\(\"([^\"]+)\"\)@await browser.storage.local.remove(\"\\1\")@g" \
-            -e "s@GM_xmlhttpRequest@fetch@g" \
             -e "s@GM_addStyle@(function(css){ var s=document.createElement(\"style\"); s.textContent=css; document.head.appendChild(s); })@g" \
             -e "s@GM_download\(([^)]+)\)@browser.downloads.download(\1)@g" \
             firefoxExtInstall/swpfl/swpfl.js
