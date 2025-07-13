@@ -1,4 +1,4 @@
-name: Sync Tampermonkey to Firefox Extension
+?name: Sync Tampermonkey to Firefox Extension
 
 on:
   push:
@@ -48,8 +48,7 @@ jobs:
           jq ".version = \"${version}\"" firefoxExtInstall/swpfl/manifest.json > manifest.tmp.json
           mv manifest.tmp.json firefoxExtInstall/swpfl/manifest.json
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo '{"current": "$version"}' > version.json
-
+          echo "{\"current\": \"${version}\"}" > version.json # Corrected line
 
       - name: Package extension folder
         run: |
