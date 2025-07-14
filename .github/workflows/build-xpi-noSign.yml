@@ -1,0 +1,35 @@
+name: "Build Firefox Extension from Zip in Test Folder (No Sign, Save as XPI)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-extension:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Extract extension zip from test folder
+        run: unzip -o test/extension.zip -d extracted-extension
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Build extension (unsigned)
+        run: |
+          mkdir -p web-ext-artifacts
+          web-ext build \
+            --source-dir "extracted-extension" \
+            --artifacts-dir web-ext-artifacts
+          # Rename .zip to .xpi
+          for f in web-ext-artifacts/*.zip; do
+            mv "$f" "${f%.zip}.xpi"
+          done
+
+      - name: Upload built xpi as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-extension
+          path: web-ext-artifacts/*.xpi
