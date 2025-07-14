@@ -1,68 +1,69 @@
-// background.js
-
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "makeFetchRequest") {
     const { url, init } = message;
-
-    // Reconstruct Headers object if sent as a plain object
-    if (init && init.headers && typeof init.headers === 'object' && !(init.headers instanceof Headers)) {
-        init.headers = new Headers(init.headers);
-    }
-
-    // Use fetch in the background script
-    return fetch(url, init)
-      .then(async response => { // Mark as async to use await for body reading
-        // Clone the response to read body streams multiple times if needed (though we only read once here)
-        const clonedResponse = response.clone();
-
-        // Determine how to read the body based on content-type or if it's likely JSON
-        const contentType = response.headers.get('content-type') || '';
-        let bodyData;
-        let isJson = false;
-
-        if (contentType.includes('application/json') || response.status === 204) { // Handle 204 No Content as no JSON
-          try {
-            bodyData = await clonedResponse.json();
-            isJson = true;
-          } catch (e) {
-            // If it claims JSON but fails to parse (e.g., empty response, malformed),
-            // treat it as text or null.
-            bodyData = await clonedResponse.text();
-            isJson = false;
+    
+    return new Promise((resolve) => {
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open(init?.method || 'GET', url, true);
+        
+        if (init?.headers && typeof init.headers === 'object') {
+          for (const key in init.headers) {
+            if (Object.hasOwnProperty.call(init.headers, key)) {
+              xhr.setRequestHeader(key, init.headers[key]);
+            }
           }
-        } else {
-          bodyData = await clonedResponse.text();
         }
-
-        // Prepare headers for sending back
-        const headers = {};
-        for (let pair of response.headers.entries()) {
-          headers[pair[0]] = pair[1];
-        }
-
-        // Send back a simplified representation of the response
-        return {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          headers: headers,
-          jsonData: isJson ? bodyData : undefined, // Send JSON data if applicable
-          textData: !isJson ? bodyData : undefined, // Send text data otherwise
-          url: response.url
+        
+        xhr.onreadystatechange = function() {
+          if (xhr.readyState === XMLHttpRequest.DONE) {
+            const rawHeaders = xhr.getAllResponseHeaders().trim();
+            
+            // Convert raw header string into an object
+            const headersObj = {};
+            rawHeaders.split('\n').forEach(line => {
+              const parts = line.split(': ');
+              if (parts.length === 2) {
+                headersObj[parts[0].toLowerCase()] = parts[1];
+              }
+            });
+            
+            resolve({
+              ok: xhr.status >= 200 && xhr.status < 300,
+              status: xhr.status,
+              statusText: xhr.statusText,
+              textData: xhr.responseText, // <- rename here
+              headers: headersObj, // <- parse to object
+              url: xhr.responseURL || url
+            });
+          }
         };
-      })
-      .catch(error => {
-        console.error("Background fetch error:", error);
-        // Send back an error state that content script can interpret
-        return {
+        
+        xhr.onerror = function() {
+          resolve({
+            ok: false,
+            status: xhr.status || 0,
+            statusText: xhr.statusText || "XHR error",
+            textData: null,
+            headers: {},
+            url: url,
+            error: { message: "Network error", stack: "" }
+          });
+        };
+        
+        xhr.send(init?.body || null);
+      } catch (error) {
+        console.error("Background XHR error:", error);
+        resolve({
           ok: false,
-          status: 0, // Indicate a network or unknown error
-          statusText: error.message || "Background fetch failed",
-          headers: {},
-          jsonData: null,
+          status: 0,
+          statusText: error.message || "XHR failed",
           textData: null,
-          error: { message: error.message, stack: error.stack } // Provide error details
-        };
-      });
+          headers: {},
+          url: url,
+          error: { message: error.message, stack: error.stack }
+        });
+      }
+    });
   }
 });

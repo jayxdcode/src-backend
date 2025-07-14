@@ -108,43 +108,35 @@ async function fetchViaBackground(input, init) {
                 ok: responseFromBackground.ok,
                 status: responseFromBackground.status,
                 statusText: responseFromBackground.statusText,
-                headers: new Headers(responseFromBackground.headers || {}), // Reconstruct Headers object
+                headers: new Headers(responseFromBackground.headers || {}),
                 url: responseFromBackground.url || requestUrl,
                 type: 'default',
                 redirected: false,
                 bodyUsed: false,
-                clone: () => ({ ...mockResponse }) // Simple clone for basic compatibility
-            };
-            
-            // Attach methods to read the body, based on what the background sent
-            if (responseFromBackground.jsonData !== undefined) {
-                mockResponse.json = () => Promise.resolve(responseFromBackground.jsonData);
-                mockResponse.text = () => Promise.resolve(JSON.stringify(responseFromBackground.jsonData));
-            } else if (responseFromBackground.textData !== undefined) {
-                mockResponse.text = () => Promise.resolve(responseFromBackground.textData);
-                // Try to parse as JSON if it looks like it, otherwise return as text
-                mockResponse.json = () => {
+                clone: () => ({ ...mockResponse }),
+                // attach methods
+                text: () => Promise.resolve(responseFromBackground.textData),
+                json: () => {
                     try {
                         return Promise.resolve(JSON.parse(responseFromBackground.textData));
                     } catch (e) {
-                        return Promise.reject(new Error("Failed to parse response as JSON. Content was: " + responseFromBackground.textData.substring(0, 100) + "..."));
+                        return Promise.reject(new Error("Failed to parse response as JSON"));
                     }
-                };
-            } else {
-                // Fallback for no specific data type
-                mockResponse.json = () => Promise.reject(new Error("No JSON data provided by background script."));
-                mockResponse.text = () => Promise.reject(new Error("No text data provided by background script."));
-            }
+                },
+                blob: () => Promise.resolve(new Blob([responseFromBackground.textData], { type: mockResponse.headers.get('content-type') || 'application/octet-stream' })),
+                arrayBuffer: () => Promise.resolve(new TextEncoder().encode(responseFromBackground.textData).buffer)
+            };
             
-            // Basic blob and arrayBuffer
-            mockResponse.blob = () => Promise.resolve(new Blob([responseFromBackground.textData || JSON.stringify(responseFromBackground.jsonData)], { type: mockResponse.headers.get('content-type') || 'application/octet-stream' }));
-            mockResponse.arrayBuffer = () => Promise.resolve(new TextEncoder().encode(responseFromBackground.textData || JSON.stringify(responseFromBackground.jsonData)).buffer);
-            
+            // Add these for compatibility
+            mockResponse.responseText = responseFromBackground.textData;
+            mockResponse.ok = responseFromBackground.ok;
+            mockResponse.status = responseFromBackground.status;
+            mockResponse.url = responseFromBackground.url || requestUrl;
             
             resolve(mockResponse);
             
         } catch (error) {
-            console.error("Error in fetchViaBackground:", error);
+            console.error("Error in fetchViaBackground:", error.message);
             reject(error); // Handle errors from sendMessage or content script logic
         }
     });
@@ -721,7 +713,7 @@ async function parseAl(url = null) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
         const titleText = doc.querySelector('title')?.textContent;
         if (titleText) { const match = titleText.match(/^(.*?) - Album by .*? \| Spotify$/); if (match && match.length > 1) return match[1]; }
-    } catch (e) { debug('parseAl error:', e); }
+    } catch (e) { debug('parseAl error:', e.message); }
     return '';
 }
 
@@ -795,7 +787,7 @@ async function fetchTranslations(lrcText, geniusTr, title, artist) {
         debug('Received backend data:', data);
         return data;
     } catch (error) {
-        debug('[❗ERROR] Failed to fetch from backend server:', error);
+        debug('[❗ERROR] Failed to fetch from backend server:', error.message);
         return { rom: "", transl: "" };
     }
 }
@@ -1044,7 +1036,7 @@ async function poller() {
             });
         }
     } catch (e) {
-        debug('[❗ERROR] [Poller Error]', e);
+        debug('[❗ERROR] [Poller Error]', e.message);
     }
 }
 
