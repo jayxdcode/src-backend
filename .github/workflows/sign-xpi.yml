@@ -1,0 +1,36 @@
+name: "Sign Firefox Extension from Zip in Test Folder (No Commit)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sign-from-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Extract extension zip from test folder
+        run: unzip -o test/extension.zip -d extracted-extension
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Sign extracted extension
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          mkdir -p signed-artifacts
+          web-ext sign \
+            --api-key "$WEB_EXT_API_KEY" \
+            --api-secret "$WEB_EXT_API_SECRET" \
+            --source-dir "extracted-extension" \
+            --artifacts-dir signed-artifacts \
+            --channel listed
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-artifacts
+          path: signed-artifacts
