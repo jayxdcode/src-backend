@@ -78,7 +78,7 @@ async function fetchViaBackground(input, init) {
                     }
                 }
             }
-            
+
             // If 'input' is a Request object, you might want to extract its URL and init properties
             let requestUrl = input;
             if (input instanceof Request) {
@@ -86,14 +86,14 @@ async function fetchViaBackground(input, init) {
                 // Merge request's init with provided init, prioritizing provided init
                 serializedInit = { ...input.init, ...serializedInit };
             }
-            
-            
+
+
             const responseFromBackground = await browser.runtime.sendMessage({
                 action: "makeFetchRequest",
                 url: requestUrl,
                 init: serializedInit
             });
-            
+
             // Handle errors or non-OK responses from the background script
             if (responseFromBackground.error) {
                 const error = new Error(responseFromBackground.error.message || "Background fetch failed");
@@ -102,7 +102,7 @@ async function fetchViaBackground(input, init) {
                 reject(error);
                 return;
             }
-            
+
             // Reconstruct a Response object from the data sent by the background script
             const mockResponse = {
                 ok: responseFromBackground.ok,
@@ -126,15 +126,15 @@ async function fetchViaBackground(input, init) {
                 blob: () => Promise.resolve(new Blob([responseFromBackground.textData], { type: mockResponse.headers.get('content-type') || 'application/octet-stream' })),
                 arrayBuffer: () => Promise.resolve(new TextEncoder().encode(responseFromBackground.textData).buffer)
             };
-            
+
             // Add these for compatibility
             mockResponse.responseText = responseFromBackground.textData;
             mockResponse.ok = responseFromBackground.ok;
             mockResponse.status = responseFromBackground.status;
             mockResponse.url = responseFromBackground.url || requestUrl;
-            
+
             resolve(mockResponse);
-            
+
         } catch (error) {
             console.error("Error in fetchViaBackground:", error.message);
             reject(error); // Handle errors from sendMessage or content script logic
@@ -146,39 +146,39 @@ async function fetchViaBackground(input, init) {
 function handleViewportChange() {
     const panel = document.getElementById('tm-lyrics-panel');
     if (!panel) return;
-    
+
     const rect = panel.getBoundingClientRect();
     const winWidth = window.innerWidth;
     const winHeight = window.innerHeight;
-    
+
     const isOutOfBounds =
-        rect.left < 0 ||
-        rect.top < 0 ||
-        rect.right > winWidth ||
-        rect.bottom > winHeight;
-    
+          rect.left < 0 ||
+          rect.top < 0 ||
+          rect.right > winWidth ||
+          rect.bottom > winHeight;
+
     const isTooLarge =
-        rect.width > winWidth ||
-        rect.height > winHeight;
-    
+          rect.width > winWidth ||
+          rect.height > winHeight;
+
     if (isOutOfBounds || isTooLarge) {
         debug('Panel is out of bounds or too large for viewport. Adjusting...');
-        
+
         // Clamp size to fit viewport with a small margin
         const newWidth = Math.min(rect.width, winWidth - 20);
         const newHeight = Math.min(rect.height, winHeight - 20);
         panel.style.width = newWidth + 'px';
         panel.style.height = newHeight + 'px';
-        
+
         // Re-check rect after resize
         const newRect = panel.getBoundingClientRect();
-        
+
         // Clamp position to keep the panel fully inside the viewport
         const newLeft = Math.max(10, Math.min(newRect.left, winWidth - newRect.width - 10));
         const newTop = Math.max(10, Math.min(newRect.top, winHeight - newRect.height - 10));
         panel.style.left = newLeft + 'px';
         panel.style.top = newTop + 'px';
-        
+
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ left: panel.style.left, top: panel.style.top }));
         localStorage.setItem(SIZE_KEY, JSON.stringify({ width: panel.style.width, height: panel.style.height }));
     }
@@ -186,188 +186,236 @@ function handleViewportChange() {
 
 // --- Manual Lyrics Menu ---
 function showManualLyricsMenu(trackKey) {
-    
-    // Ensure we have candidates
-    if (!lastCandidates || !lastCandidates.length) {
-        const manualQuery = prompt('No lyric candidates available. Search manually:');
-        if (manualQuery && manualQuery.trim() !== '') {
-            loadLyrics('', '', '', currentTrackDur, (parsed) => {
-                lyricsData = parsed;
-                renderLyrics(0);
-                setupProgressSync(currInf.bar, currInf.duration);
-            }, { flag: true, query: manualQuery });
+
+    try {
+        // Ensure we have candidates
+        if (!lastCandidates || !lastCandidates.length) {
+            const manualQuery = prompt('No lyric candidates available. Search manually:');
+            if (manualQuery && manualQuery.trim() !== '') {
+                loadLyrics('', '', '', currentTrackDur, (parsed) => {
+                    lyricsData = parsed;
+                    renderLyrics(0);
+                    setupProgressSync(currInf.bar, currInf.duration);
+                }, { flag: true, query: manualQuery });
+            }
+            return;
         }
-        return;
-    }
-    
-    // Add blur overlay
-    const existingOverlay = document.getElementById('tm-manual-overlay');
-    if (existingOverlay) existingOverlay.remove();
-    const overlay = document.createElement('div');
-    overlay.id = 'tm-manual-overlay';
-    Object.assign(overlay.style, {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        width: '100vw',
-        height: '100vh',
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(5px)',
-        zIndex: 9999
-    });
-    overlay.onclick = () => {
-        overlay.remove();
-        menu.remove();
-    };
-    document.body.appendChild(overlay);
-    
-    // Remove any existing menu
-    document.getElementById('tm-manual-menu')?.remove();
-    
-    // Container
-    const menu = document.createElement('div');
-    menu.id = 'tm-manual-menu';
-    Object.assign(menu.style, {
-        position: 'fixed',
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
-        width: '90vw',
-        maxWidth: '600px',
-        maxHeight: '70vh',
-        background: '#2a2a2a',
-        color: '#fff',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 10000,
-        boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
-    });
-    document.body.appendChild(menu);
-    
-    // Header with title & close
-    const header = document.createElement('div');
-    header.textContent = 'Choose Lyrics Source';
-    Object.assign(header.style, { padding: '12px 16px', fontWeight: 'bold', borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' });
-    closeBtn.onclick = () => {
-        overlay.remove();
-        menu.remove();
-    };
-    header.appendChild(closeBtn);
-    menu.appendChild(header);
-    
-    // Scrollable list
-    const list = document.createElement('div');
-    Object.assign(list.style, { flex: '1', overflowY: 'auto', padding: '8px' });
-    menu.appendChild(list);
-    
-    lastCandidates.forEach((c, idx) => {
-        const panel = document.createElement('div');
-        Object.assign(panel.style, { background: '#333', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' });
-        
-        // Summary row
-        const summary = document.createElement('div');
-        Object.assign(summary.style, { padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' });
-        summary.innerHTML = `<span>Candidate ${idx+1}</span><span style="font-size:12px; opacity:.7;">▼</span>`;
-        panel.appendChild(summary);
-        
-        // 3-line preview
-        const preview = document.createElement('pre');
-        const lines = c.syncedLyrics ? c.syncedLyrics.trim().split('\n').slice(0, 3) : c.plainLyrics.trim().split('\n').slice(0, 3);
-        preview.textContent = lines.join('\n');
-        Object.assign(preview.style, { margin: '0 12px 8px', padding: '0', fontSize: '12px', lineHeight: '1.2', color: '#ccc' });
-        panel.appendChild(preview);
-        
-        // Body (hidden full lyrics)
-        const body = document.createElement('pre');
-        body.textContent = c.syncedLyrics ? c.syncedLyrics.trim() : c.plainLyrics.trim();
-        Object.assign(body.style, { margin: 0, padding: '8px 12px', fontSize: '13px', lineHeight: '1.4', whiteSpace: 'pre-wrap', display: 'none', background: '#2b2b2b' });
-        panel.appendChild(body);
-        
-        // Toggle on click
-        summary.onclick = () => {
-            const isOpen = body.style.display === 'block';
-            body.style.display = isOpen ? 'none' : 'block';
-            summary.querySelector('span:last-child').textContent = isOpen ? '▼' : '▲';
-        };
-        
-        list.appendChild(panel);
-    });
-    
-    // Footer with offset input + buttons
-    const footer = document.createElement('div');
-    Object.assign(footer.style, { padding: '12px 16px', borderTop: '1px solid #444', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
-    
-    // Offset
-    const offLabel = document.createElement('label');
-    offLabel.textContent = 'Offset (ms):';
-    Object.assign(offLabel.style, { fontSize: '14px' });
-    const offInput = document.createElement('input');
-    offInput.type = 'number';
-    offInput.value = lyricsConfig[trackKey]?.offset || 0;
-    Object.assign(offInput.style, { width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #555', background: '#444', color: '#fff' });
-    footer.appendChild(offLabel);
-    footer.appendChild(offInput);
-    
-    // Manual Search button
-    const searchBtn = document.createElement('button');
-    searchBtn.textContent = 'Manual Search';
-    Object.assign(searchBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #555', borderRadius: '4px', cursor: 'pointer' });
-    searchBtn.onclick = () => {
-        const manualQuery = prompt('Enter manual search query (e.g., song title and artist):');
-        if (manualQuery && manualQuery.trim() !== '') {
+
+        // Add blur overlay
+        const existingOverlay = document.getElementById('tm-manual-overlay');
+        if (existingOverlay) existingOverlay.remove();
+        const overlay = document.createElement('div');
+        overlay.id = 'tm-manual-overlay';
+        Object.assign(overlay.style, {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 9999
+        });
+        overlay.onclick = () => {
             overlay.remove();
             menu.remove();
-            loadLyrics('', '', '', currentTrackDur, (parsed) => {
+        };
+        document.body.appendChild(overlay);
+
+        // Remove any existing menu
+        document.getElementById('tm-manual-menu')?.remove();
+
+        // Container
+        const menu = document.createElement('div');
+        menu.id = 'tm-manual-menu';
+        Object.assign(menu.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '90vw',
+            maxWidth: '600px',
+            maxHeight: '70vh',
+            background: '#2a2a2a',
+            color: '#fff',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            zIndex: 10000,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.5)'
+        });
+        document.body.appendChild(menu);
+
+        // Header with title & close
+        const header = document.createElement('div');
+        header.textContent = 'Choose Lyrics Source';
+        Object.assign(header.style, { padding: '12px 16px', fontWeight: 'bold', borderBottom: '1px solid #444', display: 'flex', justifyContent: 'space-between', alignItems: 'center' });
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '×';
+        Object.assign(closeBtn.style, { background: 'none', border: 'none', color: '#fff', fontSize: '20px', cursor: 'pointer' });
+        closeBtn.onclick = () => {
+            overlay.remove();
+            menu.remove();
+        };
+        header.appendChild(closeBtn);
+        menu.appendChild(header);
+
+        // Scrollable list
+        const list = document.createElement('div');
+        Object.assign(list.style, { flex: '1', overflowY: 'auto', padding: '8px' });
+        menu.appendChild(list);
+
+        lastCandidates.forEach((c, idx) => {
+            const panel = document.createElement('div');
+            Object.assign(panel.style, { background: '#333', borderRadius: '8px', marginBottom: '8px', overflow: 'hidden' });
+
+            // Summary row
+            const summary = document.createElement('div');
+            Object.assign(summary.style, { padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' });
+            summary.innerHTML = `<span>Candidate ${idx+1}</span><span style="font-size:12px; opacity:.7;">▼</span>`;
+            panel.appendChild(summary);
+
+            // 3-line preview
+            const preview = document.createElement('pre');
+            const lines = c.syncedLyrics ? c.syncedLyrics.trim().split('\n').slice(0, 3) : c.plainLyrics.trim().split('\n').slice(0, 3);
+            preview.textContent = lines.join('\n');
+            Object.assign(preview.style, { margin: '0 12px 8px', padding: '0', fontSize: '12px', lineHeight: '1.2', color: '#ccc' });
+            panel.appendChild(preview);
+
+            // Body (hidden full lyrics)
+            const body = document.createElement('pre');
+            body.textContent = c.syncedLyrics ? c.syncedLyrics.trim() : c.plainLyrics.trim();
+            Object.assign(body.style, { margin: 0, padding: '8px 12px', fontSize: '13px', lineHeight: '1.4', whiteSpace: 'pre-wrap', display: 'none', background: '#2b2b2b' });
+            panel.appendChild(body);
+
+            // Toggle on click
+            summary.onclick = () => {
+                const isOpen = body.style.display === 'block';
+                body.style.display = isOpen ? 'none' : 'block';
+                summary.querySelector('span:last-child').textContent = isOpen ? '▼' : '▲';
+                updateUseBtnState();
+            };
+
+            list.appendChild(panel);
+        });
+
+        // Footer with offset input + buttons
+        const footer = document.createElement('div');
+        Object.assign(footer.style, { padding: '12px 16px', borderTop: '1px solid #444', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
+
+        // Offset
+        const offLabel = document.createElement('label');
+        offLabel.textContent = 'Offset (ms):';
+        Object.assign(offLabel.style, { fontSize: '14px' });
+        const offInput = document.createElement('input');
+        offInput.type = 'number';
+        offInput.value = lyricsConfig[trackKey]?.offset || 0;
+        Object.assign(offInput.style, { width: '60px', padding: '4px', borderRadius: '4px', border: '1px solid #555', background: '#444', color: '#fff' });
+        footer.appendChild(offLabel);
+        footer.appendChild(offInput);
+
+        // Manual Search button
+        const searchBtn = document.createElement('button');
+        searchBtn.textContent = 'Manual Search';
+        Object.assign(searchBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #555', borderRadius: '4px', cursor: 'pointer' });
+        searchBtn.onclick = () => {
+            const manualQuery = prompt('Enter manual search query (e.g., song title and artist):');
+            if (manualQuery && manualQuery.trim() !== '') {
+                overlay.remove();
+                menu.remove();
+                loadLyrics('', '', '', currentTrackDur, (parsed) => {
+                    lyricsData = parsed;
+                    renderLyrics(0);
+                    if (currInf) { setupProgressSync(currInf.bar, currInf.duration); }
+                }, { flag: true, query: manualQuery });
+            }
+        };
+        footer.appendChild(searchBtn);
+
+        // Reset Pick button
+        const resetBtn = document.createElement('button');
+        resetBtn.textContent = 'Reset Pick';
+        Object.assign(resetBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #555', borderRadius: '4px', cursor: 'pointer' });
+        resetBtn.onclick = () => {
+            try {
+                const configRaw = localStorage.getItem(CONFIG_KEY) || '{}';
+                const config = JSON.parse(configRaw);
+                debug("[RESET] trackKey to delete:", trackKey);
+                debug("[RESET] keys before delete:", Object.keys(config));
+                delete config[trackKey];
+                localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+                debug("[RESET] keys after delete:", Object.keys(config));
+
+                // Close the manual panel
+                overlay.remove();
+                menu.remove();
+
+                // Reload lyrics from normal source
+                const [t, a] = trackKey.split('|');
+                loadLyrics(t, a, '', currentTrackDur, parsed => {
+                    lyricsData = parsed;
+                    renderLyrics(0);
+                    if (currInf) setupProgressSync(currInf.bar, currInf.duration);
+                });
+            } catch (error) {
+                debug("[RESET] Failed to reset pick:", error.message);
+            }
+        };
+        footer.appendChild(resetBtn);
+
+        // Use Selected button
+        const useBtn = document.createElement('button');
+        useBtn.textContent = 'Use Selected';
+        Object.assign(useBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #333', borderRadius: '4px', cursor: 'pointer' });
+        useBtn.onclick = () => {
+            const openBodies = Array.from(list.children)
+            .filter(p => p.querySelector('pre:last-of-type').style.display === 'block');
+
+            if (openBodies.length !== 1) {
+                alert("Please select exactly one candidate to use.");
+                return;
+            }
+
+            const rawLrc = openBodies[0].querySelector('pre:last-of-type').textContent;
+            const offset = parseInt(offInput.value, 10) || 0;
+
+            lyricsConfig[trackKey] = { manualLrc: addTimestamps(rawLrc), offset };
+            localStorage.setItem(CONFIG_KEY, JSON.stringify(lyricsConfig));
+            overlay.remove();
+            menu.remove();
+
+            const [t, a] = trackKey.split('|');
+            loadLyrics(t, a, '', 0, parsed => {
                 lyricsData = parsed;
                 renderLyrics(0);
-                if (currInf) { setupProgressSync(currInf.bar, currInf.duration); }
-            }, { flag: true, query: manualQuery });
-        }
-    };
-    footer.appendChild(searchBtn);
-    
-    // Reset Pick button
-    const resetBtn = document.createElement('button');
-    resetBtn.textContent = 'Reset Pick';
-    Object.assign(resetBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #555', borderRadius: '4px', cursor: 'pointer' });
-    resetBtn.onclick = () => {
-        delete lyricsConfig[trackKey];
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(lyricsConfig));
-    };
-    footer.appendChild(resetBtn);
-    
-    // Use Selected button
-    const useBtn = document.createElement('button');
-    useBtn.textContent = 'Use Selected';
-    Object.assign(useBtn.style, { padding: '6px 12px', background: 'none', color: '#fff', border: '2px solid #333', borderRadius: '4px', cursor: 'pointer' });
-    useBtn.onclick = () => {
-        const openBodies = Array.from(list.children)
+                setupProgressSync(null, 0);
+            });
+        };
+        footer.appendChild(useBtn);
+
+        menu.appendChild(footer);
+
+        function updateUseBtnState() {
+            const openBodies = Array.from(list.children)
             .filter(p => p.querySelector('pre:last-of-type').style.display === 'block');
-        let rawLrc = openBodies.length ?
-            openBodies[0].querySelector('pre:last-of-type').textContent :
-            lastCandidates[0].syncedLyrics;
-        const offset = parseInt(offInput.value, 10) || 0;
-        
-        lyricsConfig[trackKey] = { manualLrc: rawLrc, offset };
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(lyricsConfig));
-        overlay.remove();
-        menu.remove();
-        
-        const [t, a] = trackKey.split('|');
-        loadLyrics(t, a, '', 0, parsed => {
-            lyricsData = parsed;
-            renderLyrics(0);
-            setupProgressSync(null, 0);
-        });
-    };
-    footer.appendChild(useBtn);
-    
-    menu.appendChild(footer);
+
+            if (openBodies.length === 1) {
+                // highlight
+                useBtn.style.borderColor = '#0a84ff';
+                useBtn.style.color = '#0a84ff';
+            } else {
+                // remove highlight
+                useBtn.style.borderColor = '#333';
+                useBtn.style.color = '#fff';
+            }
+        }
+
+        updateUseBtnState();
+
+    } catch(e) {
+        debug("[ERROR] showManualLyricsMenu error:", e.message);
+    }
 }
 
 // --- Panel creation and drag/resize logic ---
@@ -395,9 +443,9 @@ function createPanel() {
     title.id = 'tm-header-title';
     title.innerHTML = dragLocked ? '<b>Lyrics (Locked)</b>' : '<b>Lyrics</b>';
     header.appendChild(title);
-    
+
     detectLongClick(title, toggleLogVisibility, null, 1000);
-    
+
     const controls = document.createElement('div');
     Object.assign(controls.style, { display: 'flex', gap: '8px', alignItems: 'center' });
     const opDown = document.createElement('button');
@@ -438,9 +486,9 @@ function createPanel() {
     panel.appendChild(resizeHandle);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
-    
+
     applyTheme(panel);
-    
+
     // Drag logic
     let dragX = 0,
         dragY = 0;
@@ -466,7 +514,7 @@ function createPanel() {
         document.body.style.userSelect = '';
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ left: panel.style.left, top: panel.style.top }));
     });
-    
+
     // Touch drag
     header.addEventListener('touchstart', e => {
         if (dragLocked) return;
@@ -492,7 +540,7 @@ function createPanel() {
         document.body.style.userSelect = '';
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ left: panel.style.left, top: panel.style.top }));
     });
-    
+
     // Resize logic
     let startW, startH, startX, startY;
     resizeHandle.addEventListener('mousedown', e => {
@@ -576,15 +624,15 @@ function gmFetch(url, headers = {}) {
         // Ensure fetchViaBackground is accessible in this scope (e.g., defined in the same content script)
         return fetchViaBackground(url, { "headers": { headers } }) // Call your custom function here
             .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response;
-            })
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response;
+        })
             .catch(error => {
-                // The error thrown by fetchViaBackground or the background script will propagate here
-                throw new Error(`Custom fetch failed: ${error.message}`);
-            });
+            // The error thrown by fetchViaBackground or the background script will propagate here
+            throw new Error(`Custom fetch failed: ${error.message}`);
+        });
     }
 }
 
@@ -605,19 +653,19 @@ function gmFetchPost(url, body = {}, headers = {}) {
     } else {
         // Use custom fetchViaBackground if GM_xmlhttpRequest is not available
         return fetchViaBackground(url, {
-                method: 'POST',
-                headers,
-                body: typeof body === 'string' ? body : JSON.stringify(body)
-            })
+            method: 'POST',
+            headers,
+            body: typeof body === 'string' ? body : JSON.stringify(body)
+        })
             .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response;
-            })
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response;
+        })
             .catch(error => {
-                throw new Error(`Custom fetch failed: ${error.message}`);
-            });
+            throw new Error(`Custom fetch failed: ${error.message}`);
+        });
     }
 }
 
@@ -640,12 +688,12 @@ function toggleLogVisibility() {
 function detectLongClick(element, onLongClick, onShortClick, longClickThreshold = 500) {
     let pressTimer;
     let isLongClickTriggered = false; // Flag to prevent short click after long click
-    
+
     if (!element || typeof onLongClick !== 'function') {
         console.error("detectLongClick: Invalid element or onLongClick callback provided.");
         return;
     }
-    
+
     const startTimer = () => {
         isLongClickTriggered = false; // Reset flag for new press
         pressTimer = setTimeout(() => {
@@ -653,11 +701,11 @@ function detectLongClick(element, onLongClick, onShortClick, longClickThreshold 
             onLongClick();
         }, longClickThreshold);
     };
-    
+
     const clearTimer = () => {
         clearTimeout(pressTimer);
     };
-    
+
     // --- Mouse Events ---
     element.addEventListener('mousedown', (event) => {
         // Prevent right-click from triggering long-click for mouse events
@@ -666,7 +714,7 @@ function detectLongClick(element, onLongClick, onShortClick, longClickThreshold 
         }
         startTimer();
     });
-    
+
     element.addEventListener('mouseup', () => {
         clearTimer();
         // Only trigger short click if long click wasn't triggered
@@ -674,14 +722,14 @@ function detectLongClick(element, onLongClick, onShortClick, longClickThreshold 
             onShortClick();
         }
     });
-    
+
     // If mouse leaves the element while pressed (important to clear timer)
     element.addEventListener('mouseleave', () => {
         clearTimer();
         // Reset long click flag if mouse leaves, preventing accidental short click if re-entered
         isLongClickTriggered = false;
     });
-    
+
     // --- Touch Events ---
     // Using passive: true for better scroll performance. If you need to prevent default
     // browser behavior (like scrolling/zooming on touch), set to false and handle `event.preventDefault()`.
@@ -689,14 +737,14 @@ function detectLongClick(element, onLongClick, onShortClick, longClickThreshold 
         // event.preventDefault(); // Uncomment if you need to prevent default touch behaviors
         startTimer();
     }, { passive: true });
-    
+
     element.addEventListener('touchend', () => {
         clearTimer();
         if (!isLongClickTriggered && typeof onShortClick === 'function') {
             onShortClick();
         }
     }, { passive: true });
-    
+
     element.addEventListener('touchcancel', () => {
         clearTimer();
         isLongClickTriggered = false; // Reset if touch is interrupted (e.g., phone call)
@@ -758,14 +806,14 @@ async function scrapeGeniusUrl(url) {
         const doc = new DOMParser().parseFromString(pageRes.responseText, 'text/html');
         const containers = doc.querySelectorAll('div[data-lyrics-container="true"]');
         if (!containers.length) throw new Error('No lyrics containers found on page.');
-        
+
         const blocks = [];
         containers.forEach(div => {
             const clone = div.cloneNode(true);
             clone.querySelectorAll('[data-exclude-from-selection="true"]').forEach(e => e.remove());
             blocks.push(clone.innerText.trim());
         });
-        
+
         const lyrics = blocks.join('\n\n').trim();
         debug('✅ Successfully scraped lyrics from Genius page.');
         return lyrics;
@@ -819,13 +867,33 @@ function parseLRC(lrc, romLrc, translLrc) {
     return mergeLRC(parseLRCToArray(lrc), parseLRCToArray(romLrc), parseLRCToArray(translLrc));
 }
 
+function addTimestamps(lyrics) {
+    // regex matches lines starting with [mm:ss.xx] or [mm:ss.xxx]
+    const timestampRegex = /^\[\d{2}:\d{2}\.\d{2,3}\]/m;
+    if (timestampRegex.test(lyrics)) {
+        // found existing timestamp, return as is
+        return lyrics;
+    }
+
+    const lines = lyrics.split('\n');
+    lines.concat(["[00:00:101] PLAIN LRC MODE", "[00:00.102] "])
+    const startMs = 103;
+    const result = lines.map((line, index) => {
+        const ms = startMs + index;
+        const timestamp = `[00:00.${String(ms).padStart(3, '0')}]`;
+        return `${timestamp} ${line}`;
+    });
+
+    return result.join('\n');
+}
+
 async function loadLyrics(title, artist, album, duration, onTransReady, manual = { flag: false, query: "" }) {
     if (!manual.flag) debug('Searching for lyrics:', title, artist, album, duration);
     else debug(`Manually searching lyrics: using user prompt "${manual.query}"...`);
-    
+
     const trackKey = `${title}|${artist}`;
     let geniusLyrics = null;
-    
+
     try {
         // --- 0) Attempt to get Genius lyrics first ---
         /*  PLACEHOLDER
@@ -836,7 +904,7 @@ async function loadLyrics(title, artist, album, duration, onTransReady, manual =
             }
         }
         */
-        
+
         // --- 1) Manual override check ---
         if (lyricsConfig[trackKey]?.manualLrc && !manual.flag) {
             const { manualLrc, offset = 0 } = lyricsConfig[trackKey];
@@ -847,13 +915,13 @@ async function loadLyrics(title, artist, album, duration, onTransReady, manual =
             if (searchRes.status === 200 || searchRes.ok) lastCandidates = JSON.parse(searchRes.responseText);
             return;
         }
-        
+
         // --- 2) Fetch from lrclib (with fallback) ---
         const primaryMetadata = manual.flag ? manual.query : [title, artist, album].filter(Boolean).join(' ');
         let searchRes = await gmFetch(`https://lrclib.net/api/search?q=${encodeURIComponent(primaryMetadata)}`);
         if (!(searchRes.status === 200 || searchRes.ok)) throw new Error('lrclib search failed');
         let searchData = JSON.parse(searchRes.responseText);
-        
+
         if (!Array.isArray(searchData) || !searchData.some(c => c.syncedLyrics)) {
             if (!manual.flag && album) {
                 debug('Retrying lrclib search without album.');
@@ -862,7 +930,7 @@ async function loadLyrics(title, artist, album, duration, onTransReady, manual =
             }
         }
         lastCandidates = Array.isArray(searchData) ? searchData : [];
-        
+
         // --- 3) Pick best candidate ---
         let candidate = null,
             minDelta = Infinity;
@@ -874,18 +942,18 @@ async function loadLyrics(title, artist, album, duration, onTransReady, manual =
             }
         });
         if (!candidate && lastCandidates.length > 0) candidate = lastCandidates[0];
-        
+
         if (!candidate || (!candidate.syncedLyrics && !candidate.plainLyrics)) {
             onTransReady([{ time: 0, text: 'Failed to find any lyrics for this track.', roman: '', trans: '' }]);
             return;
         }
-        
+
         // --- 4) Process candidate and get translations ---
-        const rawLrc = candidate.syncedLyrics || `[00:00.01] ${candidate.plainLyrics}`;
+        const rawLrc = candidate.syncedLyrics || addTimestamps(candidate.plainLyrics);
         onTransReady(parseLRC(rawLrc, '', '')); // Render original lyrics immediately
         const { rom, transl } = await fetchTranslations(rawLrc, geniusLyrics, title, artist);
         onTransReady(parseLRC(rawLrc, rom, transl));
-        
+
     } catch (e) {
         // alert(`Error while displaying lrc: ${e} \n\n\n Please report this to \n\nhttps://github.com/jayxdcode/src-backend/issues\n\nalongside with a screenshot of this alert.`);
         debug('[❗ERROR] [Lyrics] loadLyrics error:', `${e}`);
@@ -901,7 +969,7 @@ function parseTimeString(str) {
 
 function addTimeJumpListener() {
     const lyricLinesWithTimestamp = document.querySelectorAll('#tm-lyrics-lines [timestamp]');
-    
+
     lyricLinesWithTimestamp.forEach(element => {
         const timestampValue = element.getAttribute('timestamp');
         if (timestampValue) {
@@ -948,34 +1016,42 @@ function renderLyrics(currentIdx) {
     const subColor = currentTheme === 'light' ? '#555' : '#ccc';
     const start = Math.max(0, currentIdx - 70);
     const end = Math.min(lyricsData.length - 1, currentIdx + 70);
-    
+
     for (let i = start; i <= end; i++) {
         const ln = lyricsData[i];
-        
+
         if (!ln.text && !ln.roman && !ln.trans) {
             html += `<div class="tm-lyric-line" style="min-height:1.6em;"> </div>`;
             continue;
         }
         const lineClass = i === currentIdx ? `tm-lrc-${i} tm-lyric-current` : `tm-lrc-${i} tm-lyric-line`;
-        const lineStyle = `white-space: pre-wrap; color:${color}; ${i === currentIdx ? "font-weight:bold;" : "opacity:.7;"} margin:10px 0; min-height:1.6em; display:block;`;
+        const lineStyle = `white-space: pre-wrap; color:${color}; ${i === currentIdx ? "font-weight:bold; font-size:1.25em;" : "opacity:.7;"} margin:20px 0; min-height:1.6em; display:block;`;
         html += `<div class="${lineClass}" style="${lineStyle}" timestamp=${ln.time}>${ln.text || ' '}`;
         if (ln.roman && ln.text.trim() !== ln.roman.trim()) html += `<div style="font-size:.75em; color:${subColor}; margin-top:2px;">${ln.roman}</div>`;
         if (ln.trans && ln.text.trim() !== ln.trans.trim()) html += `<div style="font-size:.75em; color:${subColor}; margin-top:2px;">${ln.trans}</div>`;
         html += `</div>`;
     }
     linesDiv.innerHTML = html;
-    
+
     const currElem = linesDiv.querySelector('.tm-lyric-current');
     if (currElem) {
         linesDiv.scrollTop = currElem.offsetTop - linesDiv.clientHeight / 2 + currElem.offsetHeight / 2;
     }
-    
+
     addTimeJumpListener();
 }
 
 function syncLyrics(bar, durationMs) {
-    if (!bar || !lyricsData || lyricsData.length === 0) return;
-    let t = getProgressBarTimeMs(bar, durationMs);
+    const progressInput = document.querySelector("[data-testid='playback-progressbar'] input");
+    let t;
+
+    if (!progressInput) {
+        if (!bar || !lyricsData || lyricsData.length === 0) return;
+        t = getProgressBarTimeMs(bar, durationMs);
+    } else {
+        t = progressInput.value;
+    }
+
     if (lyricsData.length === 1) {
         if (lastRenderedIdx !== 0) {
             renderLyrics(0);
@@ -983,11 +1059,13 @@ function syncLyrics(bar, durationMs) {
         }
         return;
     }
+
     let idx = lyricsData.findIndex((line, i) => i === lyricsData.length - 1 || (line.time <= t && t < lyricsData[i + 1].time));
     if (idx === -1) idx = lyricsData.length - 1;
     if (idx !== lastRenderedIdx) {
         renderLyrics(idx);
         lastRenderedIdx = idx;
+
     }
 }
 
@@ -1009,10 +1087,10 @@ function setupProgressSync(bar, durationMs) {
 // window.timeJump =
 function timeJump(timestamp) {
     const progressInput = document.querySelector("[data-testid='playback-progressbar'] input");
-    
+
     const seekTo = Math.min(timestamp, progressInput.max);
     progressInput.value = seekTo;
-    
+
     progressInput.dispatchEvent(new Event('input', { bubbles: true }));
     progressInput.dispatchEvent(new Event('change', { bubbles: true }));
 };
@@ -1048,7 +1126,7 @@ function setupLogElement() {
     // Create the main container for logs
     const logs = document.createElement('div');
     logs.id = 'tm-logs';
-    
+
     // Style it to be hidden by default but available for inspection
     Object.assign(logs.style, {
         position: 'fixed',
@@ -1067,10 +1145,10 @@ function setupLogElement() {
         borderRadius: '5px',
         display: 'none' // Hidden by default
     });
-    
+
     // Add it to the page
     document.body.appendChild(logs);
-    
+
     console.log('[Lyrics] Log element created. To view it, run this in the console:');
     console.log("document.getElementById('tm-logs').style.display = 'block';");
 }
@@ -1087,7 +1165,7 @@ function setupLogElement() {
 function debug(...args) {
     // Also log to the standard developer console
     console.log('[Lyrics]', ...args);
-    
+
     // Find the log container element on the page
     const logs = document.body.querySelector('#tm-logs');
     if (logs) {
@@ -1102,7 +1180,7 @@ function debug(...args) {
 
 function init() {
     setupLogElement();
-    
+
     debug('Initializing Lyrics Panel');
     createPanel();
     window.addEventListener('resize', debounce(handleViewportChange, 250));
