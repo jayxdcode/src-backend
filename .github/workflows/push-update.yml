@@ -48,3 +48,72 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: "Update Firefox Extension and User Script Releases"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Read current version
+        id: get_version
+        run: |
+          VERSION=$(jq -r .current version.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Sign & upload Firefox Addon
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.JWT_SECRET }}
+        run: |
+          PATHX="firefoxExtInstall/swpfl"
+          echo "Uploading $PATHX to AMO via web-ext"
+          web-ext sign \
+            --api-key "$WEB_EXT_API_KEY" \
+            --api-secret "$WEB_EXT_API_SECRET" \
+            --source-dir "$PATHX" \
+            --artifacts-dir signed-artifacts \
+            --channel listed
+
+      - name: Output result
+        run: |
+          echo "Signed artifacts are in signed-artifacts/"
+          ls -lh signed-artifacts/
+
+      - name: Zip source code of firefoxExtInstall/swpfl
+        run: |
+          cd firefoxExtInstall
+          zip -r ../swpfl_addon_source.zip swpfl
+          cd ..
+
+      # --- Release 1: User Script ---
+      - name: Create User Script Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swpfl-userscript-v${{ steps.get_version.outputs.version }}
+          name: "SWPFL User Script v${{ steps.get_version.outputs.version }}"
+          files: monkey/swpfl.user.js
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Release 2: Firefox Addon ---
+      - name: Create Firefox Addon Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: swpfl-addon-v${{ steps.get_version.outputs.version }}
+          name: "SWPFL Firefox Addon v${{ steps.get_version.outputs.version }}"
+          files: |
+            signed-artifacts/*
+            swpfl_addon_source.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
