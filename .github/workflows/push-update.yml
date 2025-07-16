@@ -21,7 +21,6 @@ jobs:
         run: npm install --global web-ext
 
       - name: Sign & upload
-        # supply your JWT issuer and JWT secret as the API key/secret
         env:
           WEB_EXT_API_KEY: ${{ secrets.JWT_ISSUER }}
           WEB_EXT_API_SECRET: ${{ secrets.JWT_SECRET }}
@@ -39,4 +38,13 @@ jobs:
         run: |
           echo "Signed artifacts are in signed-artifacts/"
           ls -lh signed-artifacts/
-          
+
+      - name: Create GitHub Release with signed artifacts and auto release notes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          files: signed-artifacts/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
