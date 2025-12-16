@@ -1,16 +1,26 @@
 // Load environment variables from the .env file
-require('dotenv').config();
+import 'dotenv/config'; // Shortcut for require('dotenv').config()
 
-const express = require('express');
-const cors = require('cors');
-const crypto = require('crypto');
-const { createClient } = require('@libsql/client');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const os = require('os'); // For system status
+import express from 'express';
+import cors from 'cors';
+import crypto from 'crypto';
+import { createClient } from '@libsql/client';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import os from 'os';
+
+// Proxy Imports
+import config from "./config.default.js";
+import { initAdblock, refreshLists } from "./adblockEngine.js";
+import { createProxyRouter } from "./proxyMiddleware.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// adblock proxy
+await initAdblock();
+setInterval(refreshLists, config.listRefreshIntervalMs);
+app.use("/adblock/", createProxyRouter());
 
 // --- Custom Error for Flow Control ---
 class NoProvidersAvailableError extends Error {
@@ -186,7 +196,7 @@ app.get('/status', async (req, res) => {
 
 // --- Main API Endpoint ---
 app.post('/api/translate', async (req, res) => {
-    const { lrcText, geniusTr, title, artist } = req.body;
+    const { lrcText, humanTr, title, artist } = req.body;
     if (!lrcText) return res.status(400).json({ error: 'lrcText is required in the request body.' });
     const lrcHash = generateHash(lrcText);
     console.log(`Request received for title: "${title || 'Unknown'}"`);
@@ -222,8 +232,8 @@ app.post('/api/translate', async (req, res) => {
         console.error("Database check failed:", dbError); 
     }
 
-    // --- Integrated Genius Scraper ---
-    const geniusLyrics = geniusTr !== '' ? geniusTr : null;
+    // --- Integrated Lyrics Scraper ---
+    const humanLyrics = humanTr !== '' ? humanTr : null;
 
     const fetchAndCache = async () => {
         // --- AI System Prompts ---
@@ -249,9 +259,11 @@ rom: [00:10.00]
 transl: [00:10.00]
 --
 Also check the title as it may be present in the translation of non English songs that has English title.
+
+Always check if the title even fits the overall lyrics before inserting it.
 `.trim();
 
-        const systemInsGenius = `
+        const systemInsHuman = `
 You are an expert LRC file formatter. You will be given an original LRC file and a pre-existing English translation.
 Your task is to combine these into a single valid JSON object with two keys: "rom" (romanization) and "transl" (the provided translation, aligned).
 Your response must be a single valid JSON object. Output only the JSON object, no markdown or any extra formatting.
@@ -274,10 +286,10 @@ General Rules:
 `.trim();
 
         let combinedPrompt;
-        if (geniusLyrics) {
-            console.log("Using Genius-based prompt.");
-            const userPrompt = `Title of song: ${title}\n\nOriginal LRC input:\n${lrcText}\n\nPre-existing English Translation to use:\n${geniusLyrics}`;
-            combinedPrompt = `${systemInsGenius}\n\n${userPrompt}`;
+        if (humanLyrics) {
+            console.log("Using prompt for human-made tr/rom.");
+            const userPrompt = `Title of song: ${title}\n\nOriginal LRC input:\n${lrcText}\n\nPre-existing English Translation to use:\n${humanLyrics}`;
+            combinedPrompt = `${systemInsHuman}\n\n${userPrompt}`;
         } else {
             console.log("Using default translation prompt.");
             const userPrompt = `Title of song: ${title}\n\nLRC input:\n${lrcText}`;
