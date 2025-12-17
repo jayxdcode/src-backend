@@ -16,6 +16,20 @@ import { callProviders, getProviderModels } from './lib/googleAI.mjs';
 const app = express();
 const port = process.env.PORT || 3000;
 
+// ---------- TRUST PROXY SETTING (fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) ----------
+const tp = process.env.TRUST_PROXY;
+if (tp !== undefined) {
+  if (tp === 'true') app.set('trust proxy', true);
+  else if (tp === 'false') app.set('trust proxy', false);
+  else if (!Number.isNaN(Number(tp))) app.set('trust proxy', Number(tp));
+  else app.set('trust proxy', tp);
+} else {
+  // Default to true for hosted environments (Render/Heroku) so rate limiter and req.ip work correctly.
+  // If you want stricter behavior on local dev set TRUST_PROXY=false in your .env
+  app.set('trust proxy', true);
+}
+// -------------------------------------------------------------------------------
+
 // Start adblock proxy
 await initAdblock();
 setInterval(refreshLists, config.listRefreshIntervalMs);
@@ -64,6 +78,39 @@ const inFlightRequests = new Map();
 
 // Security Middleware
 app.use(helmet());
+// --- Server API Key Auth ---
+const MASTER_API_KEY = process.env.SERVER_MASTER_API_KEY || '';
+const CLIENT_API_KEYS = (process.env.SERVER_API_KEYS || '')
+	.split(',')
+	.map(k => k.trim())
+	.filter(Boolean);
+
+if (!MASTER_API_KEY) {
+	console.warn('[WARN] SERVER_MASTER_API_KEY is not set. /api is unprotected!');
+}
+
+function apiKeyMiddleware(req, res, next) {
+	const key =
+		req.headers['x-api-key'] ||
+		req.headers['authorization']?.replace(/^Bearer\s+/i, '');
+
+	if (!MASTER_API_KEY) return next(); // dev fallback
+
+	if (!key) {
+		return res.status(401).json({ error: 'API key required' });
+	}
+
+	if (key === MASTER_API_KEY) {
+		return next();
+	}
+
+	if (CLIENT_API_KEYS.includes(key)) {
+		return next();
+	}
+
+	return res.status(403).json({ error: 'Invalid API key' });
+}
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
@@ -71,7 +118,7 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again after 15 minutes.' },
 });
-app.use('/api/', apiLimiter);
+app.use('/api/', apiKeyMiddleware, apiLimiter);
 
 // Standard Middleware
 app.use(cors());
@@ -250,7 +297,6 @@ General Rules:
             combinedPrompt = `${systemInsDefault}\n\n${userPrompt}`;
         }
 
-        // Use centralized provider caller with key rotation and retry/backoff
         try {
             const { model, parsed } = await callProviders({ prompt: combinedPrompt, modelFallbackList: MODEL_FALLBACK });
             console.log(`Success with model: ${model}`);
@@ -269,7 +315,6 @@ General Rules:
             return finalResult;
         } catch (err) {
             console.error('All models failed:', err && err.message ? err.message : err);
-            // rethrow to upper handler
             throw err;
         }
     };
