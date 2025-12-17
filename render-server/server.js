@@ -1,6 +1,5 @@
-// Load environment variables from the .env file
-import 'dotenv/config'; // Shortcut for require('dotenv').config()
-
+// server.js
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -9,20 +8,20 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import os from 'os';
 
-// Proxy Imports
 import config from "./config.default.js";
 import { initAdblock, refreshLists } from "./adblockEngine.js";
 import { createProxyRouter } from "./proxyMiddleware.js";
+import { callProviders, getProviderModels } from './lib/googleAI.mjs';
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// adblock proxy
+// Start adblock proxy
 await initAdblock();
 setInterval(refreshLists, config.listRefreshIntervalMs);
 app.use("/adblock/", createProxyRouter());
 
-// --- Custom Error for Flow Control ---
+// Custom Error for Flow Control
 class NoProvidersAvailableError extends Error {
   constructor(message) {
     super(message);
@@ -30,7 +29,7 @@ class NoProvidersAvailableError extends Error {
   }
 }
 
-// --- Database Setup (Turso) ---
+// Database Setup (Turso)
 if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
     throw new Error('FATAL_ERROR: Turso database URL or auth token is not defined in .env file.');
 }
@@ -39,11 +38,10 @@ const db = createClient({
     url: process.env.TURSO_DATABASE_URL,
     authToken: process.env.TURSO_AUTH_TOKEN,
     migrations: {
-	loadMode: 'none'
+        loadMode: 'none'
     }
 });
 
-// Asynchronously create the table if it doesn't exist
 (async () => {
     try {
         await db.execute(`
@@ -57,35 +55,34 @@ const db = createClient({
         console.log("Connected to Turso DB and ensured 'cache' table exists.");
     } catch (err) {
         console.error("Error initializing database schema:", err);
-        process.exit(1); // Exit if we can't set up the database
+        process.exit(1);
     }
 })();
 
-// --- In-flight Request Handling ---
+// In-flight Request Handling
 const inFlightRequests = new Map();
 
-// --- Security Middleware (DDOS Protection & Hardening) ---
+// Security Middleware
 app.use(helmet());
 const apiLimiter = rateLimit({
-	windowMs: 15 * 60 * 1000,
-	limit: 100,
-	standardHeaders: 'draft-7',
-	legacyHeaders: false,
-    message: { error: 'Too many requests, please try again after 15 minutes.' },
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again after 15 minutes.' },
 });
-// Apply rate limiter only to the API endpoint
 app.use('/api/', apiLimiter);
 
-// --- Standard Middleware ---
+// Standard Middleware
 app.use(cors());
 app.use(express.json({ limit: '50kb' }));
 
-// --- API Keys from Environment Variables ---
+// Keep existing per-key env style variables for compatibility (optional)
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const GOOGLE_API_KEY_2 = process.env.GOOGLE_API_KEY_2;
 const GOOGLE_API_KEY_3 = process.env.GOOGLE_API_KEY_3;
 
-// --- Helper Functions ---
+// Helper functions (unchanged)
 const tryParse = (text) => {
     if (!text) return null;
     const start = text.indexOf('{');
@@ -103,68 +100,36 @@ function generateHash(text) {
 }
 
 function formatUptime(seconds) {
-    function pad(s) {
-        return (s < 10 ? '0' : '') + s;
-    }
+    function pad(s) { return (s < 10 ? '0' : '') + s; }
     const days = Math.floor(seconds / (24 * 3600));
     seconds %= (24 * 3600);
     const hours = Math.floor(seconds / 3600);
     seconds %= 3600;
     const minutes = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-
     return `${days}d ${pad(hours)}h ${pad(minutes)}m ${pad(secs)}s`;
 }
 
-// --- AI Provider Functions ---
-async function googleAI(combinedPrompt, apiKey, modelName) {
-    if (!apiKey) return Promise.reject(new Error(`Google AI (${modelName}) key is missing`));
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    const payload = { contents: [{ parts: [{ text: combinedPrompt }] }] };
-    const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!response.ok) throw new Error(`Google AI (${modelName}) error: ${response.status}`);
-    const result = await response.json();
-    const content = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    const parsed = tryParse(content);
-    if (!parsed) throw new Error(`Google AI (${modelName}) parsing failed`);
-    return parsed;
-}
-
-// --- Provider Management ---
-let providersConfig = [
-    { id: 'google1_gemini2.0-flash', key: GOOGLE_API_KEY,   model: 'gemini-2.0-flash', fn: googleAI, busy: false },
-    { id: 'google2_gemini2.0-flash', key: GOOGLE_API_KEY_2, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
-    { id: 'google3_gemini2.0-flash', key: GOOGLE_API_KEY_3, model: 'gemini-2.0-flash', fn: googleAI, busy: false },
-    { id: 'google1_gemini1.5-flash', key: GOOGLE_API_KEY,   model: 'gemini-1.5-flash', fn: googleAI, busy: false },
-    { id: 'google2_gemini1.5-flash', key: GOOGLE_API_KEY_2, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
-    { id: 'google3_gemini1.5-flash', key: GOOGLE_API_KEY_3, model: 'gemini-1.5-flash', fn: googleAI, busy: false },
-].filter(p => p.key);
-
-function getPrioritizedProviders() {
-    return [...providersConfig].sort((a, b) => a.busy - b.busy);
-}
-
 app.get('/', async (req, res) => {
-    const text = "I'm too lazy for a homepage lol. Go to /status for current status (not real-time tho)"
-    
-    res.send(text)
+    const text = "I'm too lazy for a homepage lol. Go to /status for current status (not real-time tho)";
+    res.send(text);
 });
 
-// --- Status Endpoint ---
+// Status endpoint (unchanged)
 app.get('/status', async (req, res) => {
-    // let dbStatus = 'disconnected';
+    let dbStatus = 'disconnected';
     let dbLatency = -1;
 
     try {
         const startTime = performance.now();
-        // await db.execute('SELECT 1'); // Simple, fast query to check connection
+        // optional ping: await db.execute('SELECT 1');
         const endTime = performance.now();
         dbStatus = 'connected';
-        // dbLatency = parseFloat((endTime - startTime).toFixed(2));
+        dbLatency = parseFloat((endTime - startTime).toFixed(2));
     } catch (error) {
         console.error("Health check DB ping failed:", error.message);
     }
-    
+
     const memoryUsage = process.memoryUsage();
 
     const status = {
@@ -182,8 +147,7 @@ app.get('/status', async (req, res) => {
             heapUsed: `${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)} MB`
         },
         platform: {
-            // NOTE: On Render, these reflect the underlying host, not just your container.
-            cpuLoad: os.loadavg(), // [1m, 5m, 15m] load averages
+            cpuLoad: os.loadavg(),
             freeMemory: `${(os.freemem() / 1024 / 1024).toFixed(2)} MB`
         },
         storage: {
@@ -194,7 +158,9 @@ app.get('/status', async (req, res) => {
     res.json(status);
 });
 
-// --- Main API Endpoint ---
+// Main API endpoint
+const MODEL_FALLBACK = process.env.MODEL_FALLBACK ? process.env.MODEL_FALLBACK.split(',').map(s => s.trim()).filter(Boolean) : getProviderModels();
+
 app.post('/api/translate', async (req, res) => {
     const { lrcText, humanTr, title, artist } = req.body;
     if (!lrcText) return res.status(400).json({ error: 'lrcText is required in the request body.' });
@@ -215,7 +181,7 @@ app.post('/api/translate', async (req, res) => {
             return res.status(500).json({ error: "The initial request failed. Please try again." });
         }
     }
-    
+
     try {
         const cacheResult = await db.execute({
             sql: "SELECT rom, transl FROM cache WHERE hash = ?",
@@ -228,15 +194,13 @@ app.post('/api/translate', async (req, res) => {
             return res.json({ rom: row.rom, transl: row.transl });
         }
         console.log("Cache miss. Proceeding to AI providers.");
-    } catch (dbError) { 
-        console.error("Database check failed:", dbError); 
+    } catch (dbError) {
+        console.error("Database check failed:", dbError);
     }
 
-    // --- Integrated Lyrics Scraper ---
     const humanLyrics = humanTr !== '' ? humanTr : null;
 
     const fetchAndCache = async () => {
-        // --- AI System Prompts ---
         const systemInsDefault = `
 You are an LRC romanizer and translator.
 Your response must be a single valid JSON object with exactly two keys: "rom" and "transl". Each value is a string of properly formatted LRC lines. Output only the JSON object, no markdown or any extra formatting.
@@ -251,16 +215,6 @@ Rules:
 8. Escape newlines inside JSON strings as "\\n".
 9. Do not add any explanation — return only the raw JSON object.
 NOTE: If a line is mixed English and other language, do romanize and translate it.
-Example output: {"rom":"[00:01.00] konnichiwa\\n[00:02.00]","transl":"[00:01.00] Hello\\n[00:02.00]"}
---
-Handling a purely English line:
-Original: [00:10.00] I don't care if it hurts
-rom: [00:10.00]
-transl: [00:10.00]
---
-Also check the title as it may be present in the translation of non English songs that has English title.
-
-Always check if the title even fits the overall lyrics before inserting it.
 `.trim();
 
         const systemInsHuman = `
@@ -296,45 +250,28 @@ General Rules:
             combinedPrompt = `${systemInsDefault}\n\n${userPrompt}`;
         }
 
-        const prioritizedProviders = getPrioritizedProviders();
-
-        if (!prioritizedProviders.length || prioritizedProviders[0].busy) {
-            console.warn("All providers are busy. Rejecting request temporarily.");
-            throw new NoProvidersAvailableError("All AI providers are currently busy. Please try again shortly.");
-        }
-
-        let lastError = null;
-        for (const provider of prioritizedProviders) {
-            if (provider.busy) continue;
+        // Use centralized provider caller with key rotation and retry/backoff
+        try {
+            const { model, parsed } = await callProviders({ prompt: combinedPrompt, modelFallbackList: MODEL_FALLBACK });
+            console.log(`Success with model: ${model}`);
+            const finalResult = { rom: parsed.rom.replace(/\\n/g, '\n'), transl: parsed.transl.replace(/\\n/g, '\n') };
 
             try {
-                provider.busy = true;
-                console.log(`Attempting translation with provider: ${provider.id}`);
-                const result = await provider.fn(combinedPrompt, provider.key, provider.model);
-                console.log(`Success with provider: ${provider.id}`);
-                const finalResult = { rom: result.rom.replace(/\\n/g, '\n'), transl: result.transl.replace(/\\n/g, '\n') };
-                
-                try {
-                    await db.execute({
-                        sql: "INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)",
-                        args: [lrcHash, finalResult.rom, finalResult.transl]
-                    });
-                    console.log("Result successfully cached.");
-                } catch (cacheErr) {
-                    console.error("Failed to write to cache:", cacheErr.message);
-                }
-
-                return finalResult;
-            } catch (error) {
-                console.error(`Provider ${provider.id} failed:`, error.message);
-                lastError = error;
-            } finally {
-                provider.busy = false;
+                await db.execute({
+                    sql: "INSERT OR IGNORE INTO cache (hash, rom, transl) VALUES (?, ?, ?)",
+                    args: [lrcHash, finalResult.rom, finalResult.transl]
+                });
+                console.log("Result successfully cached.");
+            } catch (cacheErr) {
+                console.error("Failed to write to cache:", cacheErr.message);
             }
-        }
 
-        console.error("All available AI providers failed.", lastError);
-        throw new Error("All AI providers failed.");
+            return finalResult;
+        } catch (err) {
+            console.error('All models failed:', err && err.message ? err.message : err);
+            // rethrow to upper handler
+            throw err;
+        }
     };
 
     const promise = fetchAndCache();
@@ -353,14 +290,13 @@ General Rules:
     }
 });
 
-// --- Start the server ---
+// Start server
 const server = app.listen(port, () => {
     console.log(`Spotify Lyrics Backend listening at http://localhost:${port}`);
 });
+server.setTimeout(30000);
 
-server.setTimeout(30000); // 30 seconds
-
-// --- Graceful Shutdown ---
+// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('Shutting down gracefully...');
     server.close(() => {
