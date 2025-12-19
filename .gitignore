@@ -1,2 +1,86 @@
-[template].env
-localtest.html
+# -----------------------------
+# Core Dependencies and Build Artifacts
+# -----------------------------
+
+# Dependency directories (ignored everywhere)
+node_modules
+/venv
+/env
+.venv
+
+**/node_modules
+**/venv
+**/env
+**/.venv
+
+# Build/Artifacts directories (ignored everywhere)
+/dist
+/build
+/out
+/release
+/coverage
+/lcov-report
+
+**/dist
+**/build
+**/out
+**/release
+**/coverage
+**/lcov-report
+
+# -----------------------------
+# Environment and Configuration
+# -----------------------------
+
+# !!! PREVENT SENSITIVE ENVIRONMENT FILE COMMITS !!!
+# This blocks .env, .env.local, .env.development, etc.
+**/.env
+**/.env.*
+!.env.example # Keep the example file if you use one
+
+# -----------------------------
+# Python Specific (Recursive Matching)
+# -----------------------------
+
+# Byte-code files (matches *.pyc in any directory)
+**/*.pyc
+**/__pycache__
+
+# Distribution/packaging
+**/*.egg-info/
+**/.eggs/
+
+# Compiled extensions
+**/*.so
+**/*.dylib
+**/*.dll
+
+# Jupyter Notebook checkpoints
+**/.ipynb_checkpoints
+
+# -----------------------------
+# Node.js / JavaScript Specific (Recursive Matching)
+# -----------------------------
+
+# Logs
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/*.log
+
+# TypeScript cache
+**/*.tsbuildinfo
+
+# -----------------------------
+# IDE and OS Files
+# -----------------------------
+
+# IDE/Editor project files (e.g., VSCode, PyCharm/IntelliJ)
+.vscode/
+.idea/
+
+# macOS file
+.DS_Store
+
+# backuped
+**/frontend-bak
