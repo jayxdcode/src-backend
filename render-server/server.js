@@ -18,6 +18,54 @@ import { callProviders, getProviderModels } from './lib/googleAI.mjs';
 const app = express();
 const port = process.env.PORT || 3000;
 
+const serverConfig = {
+	defaultIns: `
+You are an LRC romanizer and translator.
+Your response must be a single valid JSON object with exactly two keys: "rom" and "transl". Each value is a string of properly formatted LRC lines. Output only the JSON object, no markdown or any extra formatting.
+Rules:
+1. Preserve all metadata/tag lines (like [ti:], [ar:], [al:], credits) exactly as-is in both "rom" and "transl".
+2. Preserve every timestamp (e.g. [00:05.00]) exactly.
+3. For any line whose lyrics are entirely in English or any other Latin-alphabet script: In "rom" and "transl", output only the timestamp (e.g. "[00:12.34]") with no text following.
+4. For any instrumental or musical marker lines: Output only the timestamp in both "rom" and "transl".
+5. For non-Eglish or generally, non Latin scripts: In "rom", romanize as sung (performance-style phonetics).
+6. For non-English lines: In "transl", provide a natural, human-sounding English translation.
+7. Mixed Latin + non-Latin on the same line: romanize every syllable (leave Latin words unchanged but remember to just return the timestamp if its fully English or generally, Latin script alphabet).
+8. Escape newlines inside JSON strings as "\\n".
+9. Do not add any explanation — return only the raw JSON object.
+NOTE: If a line is mixed English and other language, do romanize and translate it.
+Example output: {"rom":"[00:01.00] konnichiwa\\n[00:02.00]","transl":"[00:01.00] Hello\\n[00:02.00]"}
+--
+Handling a purely English line:
+Original: [00:10.00] I don't care if it hurts
+rom: [00:10.00]
+transl: [00:10.00]
+--
+Also check the title as it may be present in the translation of non English songs that has English title.
+`.trim(),
+
+	humanTrIns: `
+You are an expert LRC file formatter. You will be given an original LRC file and a pre-existing English translation.
+Your task is to combine these into a single valid JSON object with two keys: "rom" (romanization) and "transl" (the provided translation, aligned).
+Your response must be a single valid JSON object. Output only the JSON object, no markdown or any extra formatting.
+
+Rules for "rom" (Romanization):
+1. From the original LRC, romanize any non-Latin script lyrics as they are sung (performance-style phonetics).
+2. If a line in the original LRC is entirely in English or other Latin script, output only the timestamp for that line (e.g., "[00:12.34]").
+3. For mixed Latin + non-Latin lines, romanize the non-Latin parts and keep the Latin parts as they are.
+4. Preserve all metadata ([ti:]) and timestamps exactly as they appear in the original LRC.
+5. For instrumental lines, output only the timestamp.
+
+Rules for "transl" (Translation Alignment):
+1. Use the "Pre-existing English Translation" provided below. Your main job is to ALIGN its phrases with the timestamps from the original LRC.
+2. If a line in the original LRC has no translatable content (e.g., it's instrumental or already English), output only the timestamp for that line in "transl".
+3. Preserve all metadata ([ti:]) and timestamps exactly as they appear in the original LRC.
+
+General Rules:
+- Escape newlines inside JSON strings as "\\n".
+- Do not add any explanation — return only the raw JSON object.
+`.trim()
+}
+
 /* -------------------------------------------------
    1. SHARED CONSTANTS & MONKEY PATCH
 ------------------------------------------------- */
@@ -113,10 +161,11 @@ function apiKeyMiddleware(req, res, next) {
 }
 
 const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 100,
+    windowMs: 1 * 60 * 1000,
+    limit: 10,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    message: "Too many requests from this IP. Current limits: 10 req/min"
 });
 
 /* -------------------------------------------------
@@ -241,7 +290,7 @@ app.post('/api/translate', apiKeyMiddleware, apiLimiter, async (req, res) => {
     } catch (dbError) { console.error("Cache Read Error", dbError); }
 
     const fetchAndCache = async () => {
-        const systemPrompt = humanTr ? "You are an expert LRC file formatter..." : "You are an LRC romanizer and translator...";
+        const systemPrompt = humanTr ? serverConfig.humanTrIns : serverConfig.defaultIns;
         const userPrompt = `Title: ${title}\nLRC:\n${lrcText}${humanTr ? `\nTranslation:\n${humanTr}` : ''}`;
         
         const { parsed } = await callProviders({ prompt: `${systemPrompt}\n\n${userPrompt}`, modelFallbackList: MODEL_FALLBACK });
@@ -262,14 +311,22 @@ app.post('/api/translate', apiKeyMiddleware, apiLimiter, async (req, res) => {
         res.json(result);
     } catch (err) {
         res.status(503).json({ error: "Translation service unavailable" });
+        console.error(err.stack || err);
     } finally {
         inFlightRequests.delete(lrcHash);
     }
 });
 
 /* -------------------------------------------------
-   7. STATUS & BASE ROUTES
+   7. STATUS & BASE ROUTES (+ DEBUG IP)
 ------------------------------------------------- */
+app.get('/debug-ip', (req, res) => {
+  res.json({
+    'your-real-ip': req.ip,
+    'forwarded-for-header': req.headers['x-forwarded-for']
+  });
+});
+
 app.get('/status', async (req, res) => {
     res.json({
         status: 'ok',
