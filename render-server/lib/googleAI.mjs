@@ -27,7 +27,9 @@ if (KEYS.length === 0) {
 }
 
 // MODEL fallback list (ordered). You can set MODEL_FALLBACK env var as comma-separated values
-const DEFAULT_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+// RIP 1.5 models :<
+// 2.0's gonna go on March :/
+const DEFAULT_MODELS = ['gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'];
 const PROVIDER_MODELS = (process.env.MODEL_FALLBACK ? process.env.MODEL_FALLBACK.split(',').map(s => s.trim()).filter(Boolean) : DEFAULT_MODELS);
 
 /* --- state for rotation/health --- */
