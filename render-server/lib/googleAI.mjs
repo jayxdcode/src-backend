@@ -184,8 +184,8 @@ export async function callProviders({ prompt, modelFallbackList = PROVIDER_MODEL
           
           // verbosity exp (feb 22, 2026)
           const data = {model: model, json: json, txt: txt, content: content, parsed: parsed, __mResStat: res.status};
-          const dbginfo = LZstring.compress(JSON.stringify(data));
-          console.log(`[debug] compressed info (feed to LZstring.decompress): ${dbginfo}`);
+          const dbginfo = LZString.compress(JSON.stringify(data));
+          console.log(`[debug] compressed info (feed to LZString.decompress): ${dbginfo}`);
 
           // try next model (break inner loop)
           break;
