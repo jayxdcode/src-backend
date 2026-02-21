@@ -1,0 +1,60 @@
+name: Manage backend NPM Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'install'
+        type: choice
+        options:
+          - install
+          - uninstall
+          - list
+      package_name:
+        description: 'Package name [put anything if you picked "list" in the choices] (e.g., lodash)'
+        required: true
+        type: string
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'render-server/package-lock.json'
+
+      - name: Update Package
+        working-directory: ./render-server
+        run: |
+          if [ "${{ github.event.inputs.action }}" == "install" ]; then
+            npm install ${{ github.event.inputs.package_name }}
+          elif [ "${{ github.event.inputs.action }}" == "list" ]; then
+            npm list --depth=0
+          else
+            npm uninstall ${{ github.event.inputs.package_name }}
+          fi
+
+      - name: Commit packages and changes
+        working-directory: ./render-server
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Adding the files relevant to the render-server directory
+          git add package.json package-lock.json
+          
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: ${{ github.event.inputs.action }} ${{ github.event.inputs.package_name }}"
+            git push
+          else
+            echo "No changes to commit."
+          fi
+          
