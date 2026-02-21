@@ -1,5 +1,6 @@
 // lib/googleAI.mjs
 import fetch from 'cross-fetch';
+import LZString from 'lz-string';
 
 const DEBUG = !!process.env.DEBUG_RENDER_SERVER;
 
@@ -168,8 +169,8 @@ export async function callProviders({ prompt, modelFallbackList = PROVIDER_MODEL
           break;
         }
 
+        const txt = await res.text().catch(() => '<no-body>');
         if (!res.ok) {
-          const txt = await res.text().catch(() => '<no-body>');
           lastErr = new Error(`model ${model} returned ${res.status}: ${txt}`);
           break;
         }
@@ -180,6 +181,12 @@ export async function callProviders({ prompt, modelFallbackList = PROVIDER_MODEL
         const parsed = parseJsonFromText(content);
         if (!parsed) {
           lastErr = new Error(`model ${model} returned unparsable content`);
+          
+          // verbosity exp (feb 22, 2026)
+          const data = {model: model, json: json, txt: txt, content: content, parsed: parsed, __mResStat: res.status};
+          const dbginfo = LZstring.compress(JSON.stringify(data));
+          console.log(`[debug] compressed info (feed to LZstring.decompress): ${dbginfo}`);
+
           // try next model (break inner loop)
           break;
         }
