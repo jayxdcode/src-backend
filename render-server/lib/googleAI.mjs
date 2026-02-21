@@ -194,10 +194,18 @@ export async function callProviders({ prompt, modelFallbackList = PROVIDER_MODEL
           lastErr = new Error(`model ${model} returned unparsable content`);
           
           // verbosity exp (feb 22, 2026)
-          const data = {model: model, json: json, txt: txt, content: content, parsed: parsed, __mResStat: res.status};
+          const data = {
+            model: model,
+            text: txt,
+            content: content,
+            parsed: parsed,
+            __mResStat: res.status};
+          /*
           const dbginfo = LZString.compressToBase64(JSON.stringify(data));
           console.log(`[debug] malformed data detected so heres the debug info (feed to LZString.decompressFromBase64): ${dbginfo}`);
-
+          */
+          console.log(`[debug:critical] ${JSON.stringify(data, null, 2)}`);
+          
           // try next model (break inner loop)
           break;
         }
