@@ -94,23 +94,34 @@ async function callModel({ model, apiKey, prompt, timeoutMs = 12000 }) {
 }
 
 /**
- * Extract a JSON object from a model response text.
- * The model often returns a textual blob — we attempt to find the first {...} substring and parse it.
+ * Extracts and parses a JSON object from a string, 
+ * handling markdown fences and common formatting issues.
  */
 function parseJsonFromText(text) {
   if (!text || typeof text !== 'string') return null;
-  // direct parse
+
+  // 1. Clean up common Markdown noise
+  let cleaned = text
+    .replace(/```json/g, '')
+    .replace(/```/g, '')
+    .trim();
+
+  // 2. Direct parse attempt
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch (e) {
-    // try to extract substring between first { and last }
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
+    // 3. Fallback: Extraction between first { and last }
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+
     if (start >= 0 && end > start) {
-      const candidate = text.slice(start, end + 1);
+      const candidate = cleaned.slice(start, end + 1);
       try {
         return JSON.parse(candidate);
       } catch (e2) {
+        // If it still fails, the JSON itself is likely malformed 
+        // (e.g., missing quotes around keys).
+        console.error("Malformed JSON structure:", candidate);
         return null;
       }
     }
@@ -185,7 +196,7 @@ export async function callProviders({ prompt, modelFallbackList = PROVIDER_MODEL
           // verbosity exp (feb 22, 2026)
           const data = {model: model, json: json, txt: txt, content: content, parsed: parsed, __mResStat: res.status};
           const dbginfo = LZString.compressToBase64(JSON.stringify(data));
-          console.log(`[debug] compressed debug info (feed to LZString.decompressFromBase64): ${dbginfo}`);
+          console.log(`[debug] malformed data detected so heres the debug info (feed to LZString.decompressFromBase64): ${dbginfo}`);
 
           // try next model (break inner loop)
           break;
