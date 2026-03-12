@@ -20,6 +20,7 @@
     "express": "^4.22.1",
     "express-rate-limit": "^7.2.0",
     "helmet": "^7.1.0",
-    "lz-string": "^1.5.0"
+    "lz-string": "^1.5.0",
+    "swagger-jsdoc": "^6.2.8"
   }
 }
